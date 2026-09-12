@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 from contextbridge.adapters.extractors import StructuredNotesExtractor
-from contextbridge.adapters.sources import ClaudeCodeSource
+from contextbridge.adapters.llm_extractor import LLMMemoryExtractor
+from contextbridge.adapters.sources import ClaudeCodeSource, CodexSource
 from contextbridge.context_pack import build_context_pack
 from contextbridge.database import ContextDatabase
 from contextbridge.models import Memory, MemoryType, SourceRef
@@ -50,6 +51,48 @@ class ContextBridgeTests(unittest.TestCase):
     def test_redacts_common_secrets(self) -> None:
         self.assertEqual(redact_secrets("token=super-secret-value"), "token=[REDACTED]")
         self.assertIn("REDACTED_API_KEY", redact_secrets("sk-abcdefghijklmnopqrstuvwxyz"))
+
+    def test_realistic_agent_fixtures_ignore_tools_and_reasoning(self) -> None:
+        fixtures = Path(__file__).parent / "fixtures"
+        claude_events = ClaudeCodeSource().sync(fixtures / "claude-code.jsonl").events
+        codex_events = CodexSource().sync(fixtures / "codex.jsonl").events
+        self.assertEqual(len(claude_events), 2)
+        self.assertNotIn("SECRET_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in claude_events))
+        self.assertEqual(len(codex_events), 2)
+        self.assertNotIn("PRIVATE_REASONING_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in codex_events))
+
+    def test_llm_extractor_validates_sources_paths_and_redacts_prompt(self) -> None:
+        event = ClaudeCodeSource().sync(Path(__file__).parent / "fixtures" / "claude-code.jsonl").events[0]
+
+        class FakeClient:
+            prompt = ""
+
+            def complete(self, system: str, user: str) -> str:
+                self.prompt = user
+                return json.dumps([
+                    {
+                        "event_id": event.id,
+                        "type": "decision",
+                        "content": "Use SQLite for local persistence",
+                        "reason": "The MVP is local-first",
+                        "related_files": ["src/contextbridge/database.py", "../outside.txt"],
+                    },
+                    {
+                        "event_id": "invented-event",
+                        "type": "fact",
+                        "content": "This must be dropped",
+                        "reason": None,
+                        "related_files": [],
+                    },
+                ])
+
+        client = FakeClient()
+        event.content += " API_KEY=super-secret-value"
+        memories = LLMMemoryExtractor(client).extract([event])
+        self.assertEqual(len(memories), 1)
+        self.assertEqual(memories[0].source, event.source)
+        self.assertEqual(memories[0].related_files, ["src/contextbridge/database.py"])
+        self.assertNotIn("super-secret-value", client.prompt)
 
 
 if __name__ == "__main__":

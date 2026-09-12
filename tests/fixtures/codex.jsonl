@@ -1,0 +1,4 @@
+{"timestamp":"2026-09-12T09:00:00Z","type":"session_meta","payload":{"id":"codex-session","cwd":"/repo"}}
+{"timestamp":"2026-09-12T09:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue the memory layer."}]}}
+{"timestamp":"2026-09-12T09:00:02Z","type":"response_item","payload":{"type":"reasoning","content":[{"type":"reasoning_text","text":"PRIVATE_REASONING_SHOULD_NOT_BE_IMPORTED"}]}}
+{"timestamp":"2026-09-12T09:00:03Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"TODO: Add a DSH adapter"}]}}

@@ -64,6 +64,8 @@ class ClaudeCodeSource(JsonlSource):
     name = "claude-code"
 
     def text_from(self, record: dict[str, Any]) -> str | None:
+        if record.get("type") not in (None, "user", "assistant"):
+            return None
         return collect_text(record.get("message") or record.get("content"))
 
 
@@ -72,6 +74,8 @@ class CodexSource(JsonlSource):
 
     def text_from(self, record: dict[str, Any]) -> str | None:
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        if record.get("type") == "response_item" and payload.get("type") != "message":
+            return None
         return collect_text(
             payload.get("message")
             or payload.get("content")

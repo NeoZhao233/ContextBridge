@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .app import create_registry, open_database
 from .context_pack import build_context_pack
 from .git_state import current_commit, stale_memory_ids
+from .adapters.llm_extractor import LLMMemoryExtractor
+from .llm import OpenAICompatibleClient
 
 
 def parser() -> argparse.ArgumentParser:
@@ -17,6 +20,9 @@ def parser() -> argparse.ArgumentParser:
     sync = commands.add_parser("sync", help="Incrementally import a session")
     sync.add_argument("--source", required=True, choices=["claude-code", "codex"])
     sync.add_argument("--path", required=True, type=Path)
+    sync.add_argument("--extractor", choices=["structured-notes", "llm"], default="structured-notes")
+    sync.add_argument("--model", help="OpenAI-compatible model name; or CONTEXTBRIDGE_MODEL")
+    sync.add_argument("--base-url", help="Provider API base URL; or CONTEXTBRIDGE_BASE_URL")
 
     commands.add_parser("status", help="Show store and plugin status")
     for name in ("inspect", "handoff"):
@@ -31,7 +37,18 @@ def parser() -> argparse.ArgumentParser:
 def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
     options = parser().parse_args(arguments)
     project = (cwd or Path.cwd()).resolve()
-    registry = create_registry()
+    extra_extractor = None
+    if options.command == "sync" and options.extractor == "llm":
+        api_key = os.environ.get("CONTEXTBRIDGE_API_KEY")
+        model = options.model or os.environ.get("CONTEXTBRIDGE_MODEL")
+        base_url = options.base_url or os.environ.get("CONTEXTBRIDGE_BASE_URL")
+        if not api_key or not model or not base_url:
+            raise SystemExit(
+                "LLM extraction requires CONTEXTBRIDGE_API_KEY plus --model/CONTEXTBRIDGE_MODEL "
+                "and --base-url/CONTEXTBRIDGE_BASE_URL"
+            )
+        extra_extractor = LLMMemoryExtractor(OpenAICompatibleClient(base_url, api_key, model))
+    registry = create_registry(extra_extractor)
     database = open_database(project)
     try:
         if options.command == "init":
@@ -41,7 +58,7 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             source = registry.source(options.source)
             result = source.sync(path, database.cursor(options.source, path))
             event_count = database.append_events(result.events)
-            drafts = registry.extractor("structured-notes").extract(result.events)
+            drafts = registry.extractor(options.extractor).extract(result.events)
             memory_count = database.append_memories(drafts, current_commit(project))
             database.set_cursor(options.source, path, result.cursor)
             print(f"Synced {event_count} events and {memory_count} memories from {options.source}.")

@@ -30,7 +30,23 @@ CONSTRAINT: Do not add a cloud dependency
 TODO: Add concurrent login tests
 ```
 
-An LLM extractor is intentionally a future plugin so the core stays deterministic and testable without API credentials.
+For ordinary natural-language conversations, use the provider-neutral LLM extractor. It calls an
+OpenAI-compatible chat-completions endpoint without depending on a provider SDK:
+
+```bash
+export CONTEXTBRIDGE_API_KEY="..."
+export CONTEXTBRIDGE_MODEL="your-model"
+export CONTEXTBRIDGE_BASE_URL="https://your-provider.example/v1"
+
+contextbridge sync \
+  --source claude-code \
+  --path /path/to/session.jsonl \
+  --extractor llm
+```
+
+The API key is read only from the environment, never accepted as a CLI argument. Common secret
+patterns are redacted before conversation text is sent to the extraction provider. The structured
+notes extractor remains the deterministic, offline default.
 
 ## Requirements
 
@@ -65,6 +81,10 @@ PYTHONPATH=src python -m contextbridge.cli inspect \
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
+
+Fixtures cover common Claude Code `user`/`assistant` records and Codex `response_item` messages.
+Tool results, image payloads, and private reasoning records are intentionally excluded from memory
+extraction.
 
 ## Architecture
 
@@ -102,7 +122,9 @@ The MVP does not provide cloud sync, multi-user collaboration, a plugin marketpl
 
 ## Status
 
-Early MVP foundation. Agent session schemas evolve, so adapters document and test the shapes they support rather than claiming universal compatibility.
+Early MVP. Claude Code does not publish a stable transcript schema, and Codex rollout records may
+evolve, so adapters parse defensively and test explicit fixtures rather than claiming universal
+compatibility.
 
 ## License
 

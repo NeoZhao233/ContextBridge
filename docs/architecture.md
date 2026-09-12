@@ -52,4 +52,6 @@ Memory IDs are content-addressed, making repeated imports idempotent. Each memor
 - SQLite rather than remote or vector storage.
 - Three focused plugin seams rather than a Cordis reimplementation.
 - File-level Git staleness warnings rather than semantic invalidation.
-- Structured-note extraction for deterministic demos; an LLM extractor is a future plugin.
+- Structured-note extraction for deterministic offline demos.
+- An OpenAI-compatible LLM extractor for natural-language conversations, with source validation,
+  path validation, and pre-request secret redaction.
