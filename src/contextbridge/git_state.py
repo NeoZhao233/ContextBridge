@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from .models import Memory
+from .models import Memory, ProjectState
 
 
 def _git(cwd: Path, *arguments: str) -> str | None:
@@ -22,6 +22,18 @@ def _git(cwd: Path, *arguments: str) -> str | None:
 
 def current_commit(cwd: Path) -> str | None:
     return _git(cwd, "rev-parse", "HEAD")
+
+
+def project_state(cwd: Path) -> ProjectState:
+    status = _git(cwd, "status", "--short")
+    recent = _git(cwd, "log", "-5", "--pretty=format:%h %s")
+    return ProjectState(
+        root=cwd,
+        branch=_git(cwd, "branch", "--show-current"),
+        commit=current_commit(cwd),
+        changed_files=status.splitlines() if status else [],
+        recent_commits=recent.splitlines() if recent else [],
+    )
 
 
 def stale_memory_ids(cwd: Path, memories: list[Memory]) -> list[str]:

@@ -56,9 +56,26 @@ inside a caller-provided budget without binding the core to one tokenizer or mod
 
 Memory IDs are content-addressed, making repeated imports idempotent. Each memory records the source agent, session, message, file, and Git commit when available.
 
+## Handoff workflow
+
+`contextbridge capture` is the user-facing orchestration layer over the small core:
+
+```text
+project root
+    │
+    ├──► discover newest matching Claude Code / Codex sessions
+    ├──► incrementally sync and extract memories
+    ├──► snapshot branch, commit, working tree, and recent commits
+    └──► retrieve task-relevant memories and render an agent-ready pack
+```
+
+Discovery reads only a bounded prefix of session files and can be bypassed with an explicit source
+and path. The result stays as inspectable Markdown instead of mutating another agent's private
+session store.
+
 ## Deliberate MVP boundaries
 
-- Manual synchronization rather than a daemon.
+- Explicit, on-demand capture rather than a background daemon.
 - SQLite rather than remote or vector storage.
 - Three focused plugin seams rather than a Cordis reimplementation.
 - File-level Git staleness warnings rather than semantic invalidation.

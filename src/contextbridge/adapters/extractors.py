@@ -4,7 +4,6 @@ import re
 
 from ..models import ContextEvent, MemoryDraft, MemoryType
 
-
 LABELS = {
     "FACT": MemoryType.FACT,
     "DECISION": MemoryType.DECISION,
@@ -14,7 +13,7 @@ LABELS = {
 }
 NOTE_PATTERN = re.compile(
     r"^\s*(?:[-*]\s*)?(FACT|DECISION|CONSTRAINT|TODO|OPEN LOOP)\s*:\s*(.+)$",
-    re.I,
+    re.IGNORECASE,
 )
 FILE_PATTERN = re.compile(r"(?:^|[\s`'(])([\w@.-]+(?:/[\w@.-]+)+\.[A-Za-z0-9]+)(?=$|[\s`'),:])")
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class MemoryType(StrEnum):
@@ -58,7 +58,16 @@ class SyncResult(BaseModel):
     cursor: str
 
 
+class ProjectState(BaseModel):
+    root: Path
+    branch: str | None = None
+    commit: str | None = None
+    changed_files: list[str] = Field(default_factory=list)
+    recent_commits: list[str] = Field(default_factory=list)
+
+
 class ContextPack(BaseModel):
     task: str
     generated_at: datetime = Field(default_factory=utc_now)
     memories: list[Memory]
+    project_state: ProjectState | None = None

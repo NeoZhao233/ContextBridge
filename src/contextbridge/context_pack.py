@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .models import ContextPack, Memory, MemoryStatus, MemoryType
-
+from .models import ContextPack, Memory, MemoryStatus, MemoryType, ProjectState
 
 TYPE_WEIGHT = {
     MemoryType.OPEN_LOOP: 4,
@@ -25,6 +24,7 @@ def build_context_pack(
     memories: list[Memory],
     limit: int = 20,
     token_budget: int = 4_000,
+    project_state: ProjectState | None = None,
 ) -> ContextPack:
     terms = {term.lower() for term in re.split(r"[^\w./-]+", task) if len(term) > 1}
 
@@ -49,4 +49,4 @@ def build_context_pack(
             break
         selected.append(memory)
         used += cost
-    return ContextPack(task=task, memories=selected)
+    return ContextPack(task=task, memories=selected, project_state=project_state)

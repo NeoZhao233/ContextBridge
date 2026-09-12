@@ -55,7 +55,7 @@ class JsonlSource(ABC):
                 "content": content,
             }
             if isinstance(timestamp, str):
-                event_data["occurred_at"] = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                event_data["occurred_at"] = datetime.fromisoformat(timestamp)
             events.append(ContextEvent(**event_data))
         return SyncResult(events=events, cursor=str(len(lines)))
 

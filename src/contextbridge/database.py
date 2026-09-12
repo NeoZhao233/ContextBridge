@@ -8,7 +8,6 @@ from pathlib import Path
 
 from .models import ContextEvent, Memory, MemoryDraft, MemoryStatus, MemoryType, SourceRef, utc_now
 
-
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
@@ -105,14 +104,9 @@ class ContextDatabase:
     def append_memories(self, drafts: list[MemoryDraft], source_commit: str | None) -> int:
         rows = []
         for draft in drafts:
-            identity = "\0".join(
-                [
-                    draft.source.agent,
-                    draft.source.session_id,
-                    draft.source.message_id,
-                    draft.type.value,
-                    draft.content,
-                ]
+            identity = (
+                f"{draft.source.agent}\0{draft.source.session_id}\0{draft.source.message_id}\0"
+                f"{draft.type.value}\0{draft.content}"
             )
             memory_id = hashlib.sha256(identity.encode()).hexdigest()
             rows.append(

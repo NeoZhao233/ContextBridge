@@ -24,6 +24,7 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 - Basic secret redaction and inspect-before-handoff workflow.
 - Small `SourcePlugin`, `ExtractorPlugin`, and `TargetPlugin` contracts.
 - Thin DSH tool plugin that loads Context Packs for the active DSH workspace.
+- One-command capture with project-aware session discovery and a Git-aware handoff pack.
 
 The deterministic MVP extractor recognizes explicit notes in session text:
 
@@ -69,6 +70,32 @@ contextbridge status
 contextbridge inspect --task "continue the DSH adapter" --token-budget 4000
 contextbridge handoff --task "continue the DSH adapter" --output context.md --token-budget 4000
 ```
+
+For the actual switch-agent workflow, `capture` combines session discovery, incremental import,
+memory extraction, Git-state capture, retrieval, and handoff rendering:
+
+```bash
+contextbridge capture \
+  --task "finish the authentication refactor and run its tests" \
+  --output .contextbridge/handoff.md
+```
+
+Run it from the project root. ContextBridge searches for the newest Claude Code and Codex JSONL
+sessions whose metadata references that project, so copying the transcript is unnecessary. If
+automatic discovery cannot identify a session, select it explicitly:
+
+```bash
+contextbridge capture \
+  --source claude-code \
+  --path /path/to/session.jsonl \
+  --task "finish the authentication refactor" \
+  --output .contextbridge/handoff.md
+```
+
+The receiving agent reads `.contextbridge/handoff.md`. The pack contains the task, branch and
+commit, working-tree changes, recent commits, ranked memories, provenance, and stale-memory
+warnings. Use `--extractor llm` with the provider variables above for ordinary conversations; the
+offline default extracts only explicit `FACT:`, `DECISION:`, `CONSTRAINT:`, and `TODO:` notes.
 
 Without installing the package:
 

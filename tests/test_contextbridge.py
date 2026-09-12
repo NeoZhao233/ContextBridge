@@ -3,14 +3,19 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from contextbridge.adapters.extractors import StructuredNotesExtractor
 from contextbridge.adapters.llm_extractor import LLMMemoryExtractor
 from contextbridge.adapters.sources import ClaudeCodeSource, CodexSource
+from contextbridge.adapters.targets import MarkdownTarget
+from contextbridge.cli import run
 from contextbridge.context_pack import build_context_pack, estimate_tokens
 from contextbridge.database import ContextDatabase
-from contextbridge.models import Memory, MemoryDraft, MemoryType, SourceRef
+from contextbridge.discovery import discover_sessions
+from contextbridge.models import Memory, MemoryDraft, MemoryType, ProjectState, SourceRef
 from contextbridge.security import redact_secrets
 
 
@@ -125,6 +130,81 @@ class ContextBridgeTests(unittest.TestCase):
         self.assertEqual(memories[0].source, event.source)
         self.assertEqual(memories[0].related_files, ["src/contextbridge/database.py"])
         self.assertNotIn("super-secret-value", client.prompt)
+
+    def test_discovers_newest_session_for_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            sessions = root / "sessions"
+            project.mkdir()
+            sessions.mkdir()
+            old = sessions / "old.jsonl"
+            newest = sessions / "new.jsonl"
+            unrelated = sessions / "other.jsonl"
+            old.write_text(json.dumps({"cwd": str(project)}), encoding="utf-8")
+            newest.write_text(json.dumps({"payload": {"cwd": str(project)}}), encoding="utf-8")
+            unrelated.write_text(json.dumps({"cwd": str(root / "elsewhere")}), encoding="utf-8")
+            old.touch()
+            newest.touch()
+            old_mtime = old.stat().st_mtime - 10
+            import os
+
+            os.utime(old, (old_mtime, old_mtime))
+            self.assertEqual(
+                discover_sessions("codex", project, root=sessions, limit=1),
+                [newest],
+            )
+
+    def test_markdown_handoff_includes_repository_state_and_instructions(self) -> None:
+        state = ProjectState(
+            root=Path("/tmp/project"),
+            branch="main",
+            commit="abc123",
+            changed_files=[" M src/app.py"],
+            recent_commits=["abc123 Add handoff"],
+        )
+        rendered = MarkdownTarget().render(
+            build_context_pack("finish tests", [], project_state=state)
+        )
+        self.assertIn("## Handoff instructions", rendered)
+        self.assertIn("`main`", rendered)
+        self.assertIn("` M src/app.py`", rendered)
+
+    def test_capture_runs_sync_and_handoff_as_one_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            session = project / "session.jsonl"
+            output = project / "handoff.md"
+            session.write_text(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {"content": "TODO: Finish src/contextbridge/cli.py"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                result = run(
+                    [
+                        "capture",
+                        "--source",
+                        "claude-code",
+                        "--path",
+                        str(session),
+                        "--task",
+                        "finish the CLI",
+                        "--output",
+                        str(output),
+                    ],
+                    cwd=project,
+                )
+            self.assertEqual(result, 0)
+            self.assertIn("Captured 1 events and 1 memories", stdout.getvalue())
+            handoff = output.read_text(encoding="utf-8")
+            self.assertIn("Finish src/contextbridge/cli.py", handoff)
+            self.assertIn("## Repository state", handoff)
 
 
 if __name__ == "__main__":
