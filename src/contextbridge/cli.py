@@ -29,6 +29,7 @@ def parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--task", required=True)
         command.add_argument("--limit", type=int, default=20)
+        command.add_argument("--token-budget", type=int, default=4000)
         if name == "handoff":
             command.add_argument("--output", type=Path)
     return root
@@ -67,7 +68,13 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             print(json.dumps({**database.stats(), "plugins": registry.describe()}, indent=2))
         else:
             database.mark_possibly_stale(stale_memory_ids(project, database.memories()))
-            pack = build_context_pack(options.task, database.memories(), options.limit)
+            candidates = database.search_memories(options.task, max(100, options.limit * 5))
+            pack = build_context_pack(
+                options.task,
+                candidates,
+                options.limit,
+                options.token_budget,
+            )
             rendered = registry.target("markdown").render(pack)
             if options.command == "handoff" and options.output:
                 output = options.output.resolve()

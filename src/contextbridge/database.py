@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from pathlib import Path
 
@@ -39,6 +40,24 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
     cursor TEXT NOT NULL,
     PRIMARY KEY (source, path)
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+    memory_id UNINDEXED,
+    content,
+    reason,
+    related_files
+);
+CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
+    INSERT INTO memories_fts(rowid, memory_id, content, reason, related_files)
+    VALUES (new.rowid, new.id, new.content, coalesce(new.reason, ''), new.related_files);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_fts_delete AFTER DELETE ON memories BEGIN
+    DELETE FROM memories_fts WHERE rowid = old.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS memories_fts_update AFTER UPDATE ON memories BEGIN
+    DELETE FROM memories_fts WHERE rowid = old.rowid;
+    INSERT INTO memories_fts(rowid, memory_id, content, reason, related_files)
+    VALUES (new.rowid, new.id, new.content, coalesce(new.reason, ''), new.related_files);
+END;
 """
 
 
@@ -50,6 +69,12 @@ class ContextDatabase:
         self.connection.row_factory = sqlite3.Row
         self.connection.executescript(SCHEMA)
         self.connection.execute("PRAGMA journal_mode = WAL")
+        self.connection.execute(
+            """INSERT INTO memories_fts(rowid, memory_id, content, reason, related_files)
+               SELECT rowid, id, content, coalesce(reason, ''), related_files FROM memories
+               WHERE rowid NOT IN (SELECT rowid FROM memories_fts)"""
+        )
+        self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
@@ -78,7 +103,6 @@ class ContextDatabase:
         return self.connection.total_changes - before
 
     def append_memories(self, drafts: list[MemoryDraft], source_commit: str | None) -> int:
-        before = self.connection.total_changes
         rows = []
         for draft in drafts:
             identity = "\0".join(
@@ -107,7 +131,7 @@ class ContextDatabase:
                     utc_now().isoformat(),
                 )
             )
-        self.connection.executemany(
+        cursor = self.connection.executemany(
             """INSERT OR IGNORE INTO memories
                (id, type, content, reason, related_files, source_agent, source_session,
                 source_message, source_path, source_commit, status, created_at)
@@ -115,7 +139,7 @@ class ContextDatabase:
             rows,
         )
         self.connection.commit()
-        return self.connection.total_changes - before
+        return max(cursor.rowcount, 0)
 
     def cursor(self, source: str, path: Path) -> str | None:
         row = self.connection.execute(
@@ -134,34 +158,51 @@ class ContextDatabase:
 
     def memories(self) -> list[Memory]:
         rows = self.connection.execute("SELECT * FROM memories ORDER BY created_at DESC").fetchall()
-        return [
-            Memory(
-                id=row["id"],
-                type=MemoryType(row["type"]),
-                content=row["content"],
-                reason=row["reason"],
-                related_files=json.loads(row["related_files"]),
-                source=SourceRef(
-                    agent=row["source_agent"],
-                    session_id=row["source_session"],
-                    message_id=row["source_message"],
-                    path=Path(row["source_path"]),
-                ),
-                source_commit=row["source_commit"],
-                status=MemoryStatus(row["status"]),
-                created_at=row["created_at"],
-            )
-            for row in rows
-        ]
+        return [self._to_memory(row) for row in rows]
+
+    def search_memories(self, query: str, limit: int = 100) -> list[Memory]:
+        terms = list(dict.fromkeys(re.findall(r"[\w./-]{2,}", query.lower())))
+        if not terms:
+            return self.memories()[:limit]
+        expression = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+        rows = self.connection.execute(
+            """SELECT memories.* FROM memories_fts
+               JOIN memories ON memories.rowid = memories_fts.rowid
+               WHERE memories_fts MATCH ?
+               ORDER BY bm25(memories_fts), memories.created_at DESC
+               LIMIT ?""",
+            (expression, limit),
+        ).fetchall()
+        if not rows:
+            return self.memories()[:limit]
+        return [self._to_memory(row) for row in rows]
+
+    @staticmethod
+    def _to_memory(row: sqlite3.Row) -> Memory:
+        return Memory(
+            id=row["id"],
+            type=MemoryType(row["type"]),
+            content=row["content"],
+            reason=row["reason"],
+            related_files=json.loads(row["related_files"]),
+            source=SourceRef(
+                agent=row["source_agent"],
+                session_id=row["source_session"],
+                message_id=row["source_message"],
+                path=Path(row["source_path"]),
+            ),
+            source_commit=row["source_commit"],
+            status=MemoryStatus(row["status"]),
+            created_at=row["created_at"],
+        )
 
     def mark_possibly_stale(self, memory_ids: list[str]) -> int:
-        before = self.connection.total_changes
-        self.connection.executemany(
+        cursor = self.connection.executemany(
             "UPDATE memories SET status = 'possibly_stale' WHERE id = ? AND status = 'active'",
             [(memory_id,) for memory_id in memory_ids],
         )
         self.connection.commit()
-        return self.connection.total_changes - before
+        return max(cursor.rowcount, 0)
 
     def stats(self) -> dict[str, int]:
         def count(query: str) -> int:

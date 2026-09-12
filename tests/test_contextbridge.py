@@ -8,9 +8,9 @@ from pathlib import Path
 from contextbridge.adapters.extractors import StructuredNotesExtractor
 from contextbridge.adapters.llm_extractor import LLMMemoryExtractor
 from contextbridge.adapters.sources import ClaudeCodeSource, CodexSource
-from contextbridge.context_pack import build_context_pack
+from contextbridge.context_pack import build_context_pack, estimate_tokens
 from contextbridge.database import ContextDatabase
-from contextbridge.models import Memory, MemoryType, SourceRef
+from contextbridge.models import Memory, MemoryDraft, MemoryType, SourceRef
 from contextbridge.security import redact_secrets
 
 
@@ -47,6 +47,38 @@ class ContextBridgeTests(unittest.TestCase):
         ]
         pack = build_context_pack("add login test", memories, limit=1)
         self.assertEqual(pack.memories[0].id, "2")
+
+    def test_context_pack_honors_token_budget(self) -> None:
+        source = SourceRef(agent="codex", session_id="s1", message_id="1", path=Path("s.jsonl"))
+        memories = [
+            Memory(
+                id=str(index),
+                type=MemoryType.FACT,
+                content=f"Authentication detail {index} " + "word " * 80,
+                source=source,
+            )
+            for index in range(5)
+        ]
+        pack = build_context_pack("authentication", memories, limit=20, token_budget=250)
+        self.assertEqual(len(pack.memories), 1)
+        self.assertGreater(estimate_tokens(pack.memories[0].content), 50)
+
+    def test_fts_search_finds_related_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = ContextDatabase(Path(directory) / "data.db")
+            source = SourceRef(agent="codex", session_id="s1", message_id="1", path=Path("s.jsonl"))
+            try:
+                database.append_memories(
+                    [
+                        MemoryDraft(type=MemoryType.FACT, content="Authentication uses OAuth", source=source),
+                        MemoryDraft(type=MemoryType.FACT, content="Database uses SQLite", source=source),
+                    ],
+                    None,
+                )
+                results = database.search_memories("OAuth login", limit=10)
+                self.assertEqual([memory.content for memory in results], ["Authentication uses OAuth"])
+            finally:
+                database.close()
 
     def test_redacts_common_secrets(self) -> None:
         self.assertEqual(redact_secrets("token=super-secret-value"), "token=[REDACTED]")

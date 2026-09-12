@@ -9,7 +9,7 @@ The core owns only:
 - versioned Pydantic data contracts;
 - append-only normalized events and SQLite projections;
 - plugin registration;
-- task-aware memory ranking;
+- SQLite FTS5 retrieval, task-aware ranking, and token-budget selection;
 - provenance and stale-state representation.
 
 Agent-specific session formats and output formats belong to plugins.
@@ -38,11 +38,15 @@ The MVP uses Python `Protocol` definitions instead of building a general depende
 
 ## Storage model
 
-SQLite contains three tables:
+SQLite contains three durable tables plus an FTS projection:
 
 - `events`: immutable observations with source attribution;
 - `memories`: rebuildable facts, decisions, constraints, and open loops;
 - `sync_cursors`: per-source incremental import positions.
+
+An FTS5 projection indexes memory content, rationale, and related files. Context Pack construction
+uses FTS candidates, type/recency relevance, and a conservative Latin/CJK token estimate to remain
+inside a caller-provided budget without binding the core to one tokenizer or model vendor.
 
 Memory IDs are content-addressed, making repeated imports idempotent. Each memory records the source agent, session, message, file, and Git commit when available.
 

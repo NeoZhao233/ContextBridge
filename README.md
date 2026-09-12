@@ -16,7 +16,8 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 - Four memory types: facts, decisions, constraints, and open loops.
 - SQLite-backed local event and memory storage.
 - Every memory retains its source agent, session, message, and file.
-- Task-aware Context Pack ranking with Markdown output.
+- SQLite FTS5 retrieval and task-aware Context Pack ranking.
+- Provider-neutral token-budget enforcement with Markdown output.
 - File-level Git staleness warnings.
 - Basic secret redaction and inspect-before-handoff workflow.
 - Small `SourcePlugin`, `ExtractorPlugin`, and `TargetPlugin` contracts.
@@ -62,8 +63,8 @@ pip install -e .
 contextbridge init
 contextbridge sync --source claude-code --path examples/claude-session.jsonl
 contextbridge status
-contextbridge inspect --task "continue the DSH adapter"
-contextbridge handoff --task "continue the DSH adapter" --output context.md
+contextbridge inspect --task "continue the DSH adapter" --token-budget 4000
+contextbridge handoff --task "continue the DSH adapter" --output context.md --token-budget 4000
 ```
 
 Without installing the package:
