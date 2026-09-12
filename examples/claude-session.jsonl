@@ -1,0 +1,1 @@
+{"timestamp":"2026-09-12T09:00:00Z","message":{"content":"FACT: The CLI entry point is src/contextbridge/cli.py\nDECISION: Use SQLite for local persistence in src/contextbridge/database.py\nCONSTRAINT: Keep the MVP local-first and avoid cloud services\nTODO: Add a DSH source adapter"}}

@@ -1,0 +1,55 @@
+# Architecture
+
+ContextBridge is a context harness, not another agent runtime. It takes architectural inspiration from DeepSeek Harness: keep the kernel small, expose capabilities through plugins, and make every derived result traceable to an event.
+
+## Core responsibilities
+
+The core owns only:
+
+- versioned Pydantic data contracts;
+- append-only normalized events and SQLite projections;
+- plugin registration;
+- task-aware memory ranking;
+- provenance and stale-state representation.
+
+Agent-specific session formats and output formats belong to plugins.
+
+```text
+Session JSONL
+    │
+    ▼
+Source plugin ──► immutable events ──► Extractor plugin ──► attributed memories
+                                                               │
+Task ───────────────────────────────► ranking ──────────────────┤
+                                                               ▼
+                                                        Target plugin
+                                                               │
+                                                               ▼
+                                                         Context Pack
+```
+
+## Plugin seams
+
+- `SourcePlugin.sync()` incrementally converts an agent session into normalized events.
+- `ExtractorPlugin.extract()` derives structured memories from those events.
+- `TargetPlugin.render()` renders selected memories for a destination agent.
+
+The MVP uses Python `Protocol` definitions instead of building a general dependency-injection framework. A future DSH adapter can remain a thin TypeScript plugin that invokes the Python CLI or MCP surface.
+
+## Storage model
+
+SQLite contains three tables:
+
+- `events`: immutable observations with source attribution;
+- `memories`: rebuildable facts, decisions, constraints, and open loops;
+- `sync_cursors`: per-source incremental import positions.
+
+Memory IDs are content-addressed, making repeated imports idempotent. Each memory records the source agent, session, message, file, and Git commit when available.
+
+## Deliberate MVP boundaries
+
+- Manual synchronization rather than a daemon.
+- SQLite rather than remote or vector storage.
+- Three focused plugin seams rather than a Cordis reimplementation.
+- File-level Git staleness warnings rather than semantic invalidation.
+- Structured-note extraction for deterministic demos; an LLM extractor is a future plugin.

@@ -1,0 +1,13 @@
+.contextbridge/
+*.log
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+node_modules/
+.pnpm-store/
+dist/
+build/
+*.egg-info/
