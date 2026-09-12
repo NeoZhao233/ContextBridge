@@ -34,7 +34,13 @@ Task ─────────────────────────
 - `ExtractorPlugin.extract()` derives structured memories from those events.
 - `TargetPlugin.render()` renders selected memories for a destination agent.
 
-The MVP uses Python `Protocol` definitions instead of building a general dependency-injection framework. A future DSH adapter can remain a thin TypeScript plugin that invokes the Python CLI or MCP surface.
+The MVP uses Python `Protocol` definitions instead of building a general dependency-injection
+framework. DSH integration remains a thin JavaScript plugin that invokes the Python CLI.
+
+The initial DSH target adapter is implemented as a small JavaScript plugin. It registers a typed
+`contextbridge_handoff` tool through DSH's public `tools` service, derives the project root from the
+calling session, and delegates retrieval to the Python CLI. It does not duplicate storage or
+retrieval logic.
 
 ## Storage model
 

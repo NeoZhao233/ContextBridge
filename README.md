@@ -1,5 +1,7 @@
 # ContextBridge
 
+[![CI](https://github.com/NeoZhao233/ContextBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoZhao233/ContextBridge/actions/workflows/ci.yml)
+
 ContextBridge is a local-first context handoff harness for coding agents. It turns selected Claude Code and Codex session messages into attributed project memories, then builds a compact, task-specific Context Pack for the next agent.
 
 The project borrows DeepSeek Harness's "everything is a plugin" principle while deliberately keeping the resume-project MVP small: sources, extractors, and targets are plugins; the core owns only stable contracts, storage, ranking, and provenance.
@@ -21,6 +23,7 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 - File-level Git staleness warnings.
 - Basic secret redaction and inspect-before-handoff workflow.
 - Small `SourcePlugin`, `ExtractorPlugin`, and `TargetPlugin` contracts.
+- Thin DSH tool plugin that loads Context Packs for the active DSH workspace.
 
 The deterministic MVP extractor recognizes explicit notes in session text:
 
@@ -109,13 +112,17 @@ Task ─────────────────────────
 
 Adding a third agent should require a new source or target plugin without changing storage or ranking. See [the architecture notes](docs/architecture.md).
 
+The first third-party integration is the [DSH adapter](integrations/dsh-plugin/README.md). It keeps
+DSH-specific lifecycle and tool registration in a thin JavaScript package while the Python Core
+remains agent-independent.
+
 ## Resume-project evaluation
 
 The planned evaluation is intentionally compact:
 
 1. Ten two-stage coding tasks comparing no context, raw history, one-shot summary, and ContextBridge.
 2. Report completion rate, input tokens, and repeated exploration count.
-3. Add a DSH adapter and report adapter LOC, implementation time, and core-code changes.
+3. Measure the DSH adapter's LOC and verify that it requires no Python Core changes.
 
 ## Non-goals
 

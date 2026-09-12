@@ -1,0 +1,22 @@
+{
+  "name": "contextbridge-dsh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin DeepSeek Harness adapter for ContextBridge",
+  "main": "index.js",
+  "files": ["index.js", "tool.js", "cordis.patch.yml", "README.md"],
+  "exports": "./index.js",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "scripts": {
+    "test": "node --test test.mjs"
+  }
+}
