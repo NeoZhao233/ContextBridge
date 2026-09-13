@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import subprocess
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -83,6 +84,31 @@ class ExperimentReport(BaseModel):
     scores: list[ConditionScore]
 
 
+class ExperimentPreflightTask(BaseModel):
+    task_id: str
+    repository: str
+    requested_commit: str
+    resolved_commit: str | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class ExperimentPreflightReport(BaseModel):
+    valid: bool
+    tasks: list[ExperimentPreflightTask]
+
+
+class ExperimentRunCard(BaseModel):
+    order: int
+    run_id: str
+    condition: ExperimentCondition
+    repository: str
+    base_commit: str
+    stage_a_prompt: str
+    stage_b_prompt: str
+    test_command: str
+    condition_payload: str
+
+
 def load_manifest(path: Path) -> ExperimentManifest:
     return ExperimentManifest.model_validate_json(path.read_text(encoding="utf-8"))
 
@@ -129,6 +155,125 @@ def load_runs(path: Path) -> list[ExperimentRun]:
         except ValueError as error:
             raise ValueError(f"Invalid result at line {line_number}: {error}") from error
     return runs
+
+
+def preflight_experiment(plan: ExperimentPlan) -> ExperimentPreflightReport:
+    reports: list[ExperimentPreflightTask] = []
+    for task in plan.tasks:
+        repository = Path(task.repository).expanduser().resolve()
+        errors: list[str] = []
+        resolved_commit = None
+        if not repository.is_dir():
+            errors.append("repository directory does not exist")
+        else:
+            result = subprocess.run(
+                ["git", "-C", str(repository), "rev-parse", "--verify", f"{task.base_commit}^{{commit}}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                errors.append("base commit does not resolve in repository")
+            else:
+                resolved_commit = result.stdout.strip()
+                if task.base_commit != resolved_commit:
+                    errors.append(
+                        "base commit is not pinned to its full object ID; "
+                        f"replace it with {resolved_commit}"
+                    )
+        reports.append(
+            ExperimentPreflightTask(
+                task_id=task.id,
+                repository=str(repository),
+                requested_commit=task.base_commit,
+                resolved_commit=resolved_commit,
+                errors=errors,
+            )
+        )
+    return ExperimentPreflightReport(
+        valid=all(not report.errors for report in reports),
+        tasks=reports,
+    )
+
+
+CONDITION_PAYLOADS = {
+    ExperimentCondition.NO_CONTEXT: (
+        "Provide Agent B only the stage-B prompt and repository state. Do not provide Agent A history."
+    ),
+    ExperimentCondition.RAW_HISTORY: (
+        "Provide Agent B the complete permitted Agent A transcript without summarization."
+    ),
+    ExperimentCondition.ONE_SHOT_SUMMARY: (
+        "Provide Agent B only the summary produced by the pinned summary model and prompt."
+    ),
+    ExperimentCondition.CONTEXTBRIDGE: (
+        "Run ContextBridge capture after Agent A, validate the pack, and provide only that pack to Agent B."
+    ),
+}
+
+
+def next_experiment_run(
+    plan: ExperimentPlan, runs: list[ExperimentRun]
+) -> ExperimentRunCard | None:
+    score_experiment(plan, runs)
+    completed = {run.run_id for run in runs}
+    tasks = {task.id: task for task in plan.tasks}
+    assignment = next(
+        (
+            candidate
+            for candidate in sorted(plan.assignments, key=lambda item: item.order)
+            if candidate.run_id not in completed
+        ),
+        None,
+    )
+    if assignment is None:
+        return None
+    task = tasks[assignment.task_id]
+    return ExperimentRunCard(
+        order=assignment.order,
+        run_id=assignment.run_id,
+        condition=assignment.condition,
+        repository=task.repository,
+        base_commit=task.base_commit,
+        stage_a_prompt=task.stage_a_prompt,
+        stage_b_prompt=task.stage_b_prompt,
+        test_command=task.test_command,
+        condition_payload=CONDITION_PAYLOADS[assignment.condition],
+    )
+
+
+def render_run_card(card: ExperimentRunCard) -> str:
+    return "\n".join(
+        [
+            f"# Experiment run {card.order}: {card.run_id}",
+            "",
+            f"- Condition: `{card.condition.value}`",
+            f"- Repository: `{card.repository}`",
+            f"- Base commit: `{card.base_commit}`",
+            f"- Test command: `{card.test_command}`",
+            "",
+            "## Agent A",
+            "",
+            card.stage_a_prompt,
+            "",
+            "## Condition payload",
+            "",
+            card.condition_payload,
+            "",
+            "## Agent B",
+            "",
+            card.stage_b_prompt,
+            "",
+        ]
+    )
+
+
+def render_preflight(report: ExperimentPreflightReport) -> str:
+    output = ["Experiment preflight passed" if report.valid else "Experiment preflight failed"]
+    for task in report.tasks:
+        status = "; ".join(task.errors) if task.errors else task.resolved_commit or "unresolved"
+        output.append(f"- {task.task_id}: {status}")
+    return "\n".join(output)
 
 
 def _average(values: list[float | int]) -> float | None:

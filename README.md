@@ -227,13 +227,21 @@ contextbridge experiment-plan \
   --manifest experiments/tasks.example.json \
   --output experiments/plan.json
 
+contextbridge experiment-preflight --plan experiments/plan.json
+
+contextbridge experiment-next \
+  --plan experiments/plan.json \
+  --results experiments/results.jsonl
+
 contextbridge experiment-report \
   --plan experiments/plan.json \
   --results experiments/results.jsonl
 ```
 
-Plans assign every task to all four conditions in seeded random order. Reports reject duplicate or
-unknown run IDs and leave incomplete runs visible rather than silently dropping them.
+Plans assign every task to all four conditions in seeded random order. Preflight checks repositories
+and pinned commits before agent quota is spent. Run cards select the next missing assignment and
+spell out exactly what context that condition permits. Reports reject duplicate or unknown run IDs
+and leave incomplete runs visible rather than silently dropping them.
 
 ## Non-goals
 

@@ -74,10 +74,28 @@ contextbridge experiment-plan \
   --manifest experiments/tasks.json \
   --seed 42 \
   --output experiments/plan.json
+
+contextbridge experiment-preflight --plan experiments/plan.json
 ```
 
 Every task appears once under each condition. The seed randomizes run order reproducibly. A run must
 start from its task's pinned `base_commit` in a fresh worktree or disposable checkout.
+`experiment-preflight` resolves every repository and base commit without executing task code. It
+also rejects branch names, `HEAD`, and abbreviated hashes: the manifest must contain the full object
+ID reported by Git so later runs cannot silently move to a different baseline. Do not spend agent
+quota until preflight passes.
+
+Use the plan order instead of choosing conditions manually:
+
+```bash
+contextbridge experiment-next \
+  --plan experiments/plan.json \
+  --results experiments/results.jsonl
+```
+
+The command skips recorded run IDs and prints a run card with the exact Agent A prompt, condition
+payload, Agent B prompt, repository, commit, and test command. Omit `--results` before the first run.
+When every assignment is recorded, it reports completion instead of silently cycling back.
 
 For each assignment, let Agent A execute `stage_a_prompt`, then start a fresh Agent B session with
 `stage_b_prompt` and exactly one condition payload:

@@ -15,7 +15,11 @@ from .experiment import (
     load_manifest,
     load_plan,
     load_runs,
+    next_experiment_run,
+    preflight_experiment,
     render_experiment_report,
+    render_preflight,
+    render_run_card,
     score_experiment,
     write_json,
 )
@@ -79,6 +83,19 @@ def parser() -> argparse.ArgumentParser:
     experiment_report.add_argument("--results", required=True, type=Path)
     experiment_report.add_argument("--format", choices=["markdown", "json"], default="markdown")
     experiment_report.add_argument("--output", type=Path)
+
+    experiment_preflight = commands.add_parser(
+        "experiment-preflight", help="Validate repositories and commits before agent runs"
+    )
+    experiment_preflight.add_argument("--plan", required=True, type=Path)
+    experiment_preflight.add_argument("--format", choices=["text", "json"], default="text")
+
+    experiment_next = commands.add_parser(
+        "experiment-next", help="Show the next incomplete cross-agent experiment run"
+    )
+    experiment_next.add_argument("--plan", required=True, type=Path)
+    experiment_next.add_argument("--results", type=Path)
+    experiment_next.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     commands.add_parser("status", help="Show store and plugin status")
     validate = commands.add_parser("validate", help="Validate a generated Context Pack")
@@ -169,6 +186,28 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             print(f"Wrote experiment report to {output}")
         else:
             print(rendered)
+        return 0
+    if options.command == "experiment-preflight":
+        report = preflight_experiment(load_plan(options.plan))
+        rendered = (
+            json.dumps(report.model_dump(mode="json"), indent=2)
+            if options.format == "json"
+            else render_preflight(report)
+        )
+        print(rendered)
+        return 0 if report.valid else 1
+    if options.command == "experiment-next":
+        runs = load_runs(options.results) if options.results else []
+        card = next_experiment_run(load_plan(options.plan), runs)
+        if card is None:
+            print("All planned experiment runs are complete.")
+            return 0
+        rendered = (
+            json.dumps(card.model_dump(mode="json"), indent=2)
+            if options.format == "json"
+            else render_run_card(card)
+        )
+        print(rendered)
         return 0
     if options.command == "validate":
         path = options.path.resolve()

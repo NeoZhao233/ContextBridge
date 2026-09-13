@@ -24,9 +24,14 @@ from contextbridge.experiment import (
     ExperimentRun,
     ExperimentTask,
     create_plan,
+    next_experiment_run,
+    preflight_experiment,
     render_experiment_report,
+    render_preflight,
+    render_run_card,
     score_experiment,
 )
+from contextbridge.git_state import current_commit
 from contextbridge.models import (
     ContextEvent,
     Memory,
@@ -498,6 +503,77 @@ class ContextBridgeTests(unittest.TestCase):
         self.assertIn("Completed: 1/4", render_experiment_report(report))
         with self.assertRaises(ValueError):
             score_experiment(plan, [run, run])
+
+    def test_experiment_preflight_resolves_commit_and_reports_missing_repository(self) -> None:
+        repository = Path(__file__).parents[1]
+        commit = current_commit(repository)
+        assert commit is not None
+        valid_task = ExperimentTask(
+            id="valid",
+            title="Valid task",
+            repository=str(repository),
+            base_commit=commit,
+            stage_a_prompt="Start.",
+            stage_b_prompt="Finish.",
+            test_command="python -m unittest",
+        )
+        valid_report = preflight_experiment(
+            create_plan(ExperimentManifest(name="valid", tasks=[valid_task]))
+        )
+        self.assertTrue(valid_report.valid)
+        self.assertRegex(valid_report.tasks[0].resolved_commit or "", r"^[0-9a-f]{40}$")
+
+        unpinned_report = preflight_experiment(
+            create_plan(
+                ExperimentManifest(
+                    name="unpinned",
+                    tasks=[valid_task.model_copy(update={"id": "unpinned", "base_commit": "HEAD"})],
+                )
+            )
+        )
+        self.assertFalse(unpinned_report.valid)
+        self.assertIn("not pinned", unpinned_report.tasks[0].errors[0])
+        self.assertIn("not pinned", render_preflight(unpinned_report))
+
+        missing_task = valid_task.model_copy(
+            update={"id": "missing", "repository": str(repository / "does-not-exist")}
+        )
+        missing_report = preflight_experiment(
+            create_plan(ExperimentManifest(name="missing", tasks=[missing_task]))
+        )
+        self.assertFalse(missing_report.valid)
+        self.assertIn("does not exist", missing_report.tasks[0].errors[0])
+
+    def test_experiment_next_skips_completed_runs_and_renders_condition(self) -> None:
+        task = ExperimentTask(
+            id="task-1",
+            title="Task 1",
+            repository="/tmp/repository",
+            base_commit="abc123",
+            stage_a_prompt="Start the task.",
+            stage_b_prompt="Finish the task.",
+            test_command="pytest -q",
+        )
+        plan = create_plan(ExperimentManifest(name="resume-study", tasks=[task]), seed=9)
+        first = next_experiment_run(plan, [])
+        assert first is not None
+        self.assertEqual(first.order, 1)
+        self.assertIn(first.condition.value, render_run_card(first))
+        completed = ExperimentRun(
+            run_id=first.run_id,
+            agent_a="agent-a",
+            agent_b="agent-b",
+            model_a="model-a",
+            model_b="model-b",
+            tests_passed=True,
+            duration_seconds=1,
+            input_tokens=100,
+            repeated_exploration=0,
+            incorrect_assumptions=0,
+        )
+        second = next_experiment_run(plan, [completed])
+        assert second is not None
+        self.assertEqual(second.order, 2)
 
 
 if __name__ == "__main__":
