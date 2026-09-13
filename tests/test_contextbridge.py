@@ -15,6 +15,7 @@ from contextbridge.cli import run
 from contextbridge.context_pack import build_context_pack, estimate_tokens
 from contextbridge.database import ContextDatabase
 from contextbridge.discovery import discover_sessions
+from contextbridge.evaluation import evaluate_cases, load_cases, render_report
 from contextbridge.models import Memory, MemoryDraft, MemoryType, ProjectState, SourceRef
 from contextbridge.security import redact_secrets
 from contextbridge.skill_install import install_agent_skills
@@ -231,6 +232,30 @@ class ContextBridgeTests(unittest.TestCase):
                 (cli_project / ".agents/skills/contextbridge-resume/SKILL.md").is_file()
             )
             self.assertFalse((cli_project / ".contextbridge").exists())
+
+    def test_offline_evaluation_compares_four_strategies(self) -> None:
+        cases = load_cases()
+        report = evaluate_cases(cases)
+        results = {result.strategy: result for result in report.results}
+        self.assertEqual(report.cases, 10)
+        self.assertEqual(results["no_context"].recall, 0.0)
+        self.assertEqual(results["raw_history"].recall, 1.0)
+        self.assertLess(results["one_shot_summary"].recall, 1.0)
+        self.assertGreaterEqual(
+            results["contextbridge"].recall,
+            results["one_shot_summary"].recall,
+        )
+        self.assertLess(results["contextbridge"].tokens, results["raw_history"].tokens)
+        self.assertEqual(
+            {name: result.tokens for name, result in results.items()},
+            {
+                "no_context": 0,
+                "raw_history": 6228,
+                "one_shot_summary": 522,
+                "contextbridge": 2086,
+            },
+        )
+        self.assertIn("not coding-task completion", render_report(report))
 
 
 if __name__ == "__main__":

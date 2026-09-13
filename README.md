@@ -170,11 +170,19 @@ remains agent-independent.
 
 ## Resume-project evaluation
 
-The planned evaluation is intentionally compact:
+Run the deterministic offline benchmark:
 
-1. Ten two-stage coding tasks comparing no context, raw history, one-shot summary, and ContextBridge.
-2. Report completion rate, input tokens, and repeated exploration count.
-3. Measure the DSH adapter's LOC and verify that it requires no Python Core changes.
+```bash
+contextbridge evaluate
+```
+
+It compares no context, verbose synthetic history, a controlled one-shot-summary baseline, and
+ContextBridge across ten cases. It reports required-memory recall, precision, source coverage, and
+estimated input tokens. This is a retrieval regression suite, not a coding-task success claim.
+
+The second evaluation layer remains ten real two-stage coding tasks measuring test pass rate, input
+tokens, time, and repeated exploration. See [the evaluation protocol](docs/evaluation.md) for metric
+definitions, current offline results, limitations, and the planned end-to-end design.
 
 ## Non-goals
 

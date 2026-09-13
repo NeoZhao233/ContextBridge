@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "oauth-refresh",
+      "task": "finish OAuth refresh token rotation tests",
+      "items": [
+        {"id": "a1", "type": "decision", "content": "OAuth refresh tokens rotate after every successful exchange.", "relevant": true, "related_files": ["src/auth/tokens.py"]},
+        {"id": "a2", "type": "constraint", "content": "Refresh token reuse must revoke the entire OAuth token family.", "relevant": true, "related_files": ["src/auth/tokens.py"]},
+        {"id": "a3", "type": "open_loop", "content": "Add OAuth refresh token rotation and reuse tests.", "relevant": true, "related_files": ["tests/test_tokens.py"]},
+        {"id": "a4", "type": "open_loop", "content": "Rewrite the marketing landing page and compare three typography systems after stakeholder review.", "relevant": false},
+        {"id": "a5", "type": "fact", "content": "The analytics dashboard exports monthly CSV files and still uses the legacy color palette.", "relevant": false}
+      ],
+      "summary_ids": ["a1", "a3", "a5"]
+    },
+    {
+      "id": "sqlite-migration",
+      "task": "complete SQLite migration rollback handling",
+      "items": [
+        {"id": "b1", "type": "decision", "content": "SQLite migrations execute inside one explicit transaction.", "relevant": true, "related_files": ["src/store/migrations.py"]},
+        {"id": "b2", "type": "constraint", "content": "A failed SQLite migration must roll back without advancing schema_version.", "relevant": true, "related_files": ["src/store/migrations.py"]},
+        {"id": "b3", "type": "open_loop", "content": "Add rollback coverage for the SQLite migration failure path.", "relevant": true, "related_files": ["tests/test_migrations.py"]},
+        {"id": "b4", "type": "fact", "content": "The documentation site deploys from a separate branch with several historical redirects.", "relevant": false},
+        {"id": "b5", "type": "open_loop", "content": "Evaluate a new icon set for the desktop settings navigation after the next release.", "relevant": false}
+      ],
+      "summary_ids": ["b1", "b3", "b4"]
+    },
+    {
+      "id": "cache-invalidation",
+      "task": "fix cache invalidation after profile update",
+      "items": [
+        {"id": "c1", "type": "fact", "content": "Profile reads use the user-profile cache namespace.", "relevant": true, "related_files": ["src/profile/cache.py"]},
+        {"id": "c2", "type": "decision", "content": "Profile update invalidates cache only after the database commit succeeds.", "relevant": true, "related_files": ["src/profile/service.py"]},
+        {"id": "c3", "type": "open_loop", "content": "Test cache invalidation for failed and successful profile updates.", "relevant": true, "related_files": ["tests/test_profile.py"]},
+        {"id": "c4", "type": "constraint", "content": "Email templates must remain compatible with Outlook 2019 and use inline styles.", "relevant": false},
+        {"id": "c5", "type": "open_loop", "content": "Collect product screenshots for the onboarding guide in three viewport sizes.", "relevant": false}
+      ],
+      "summary_ids": ["c2", "c3", "c4"]
+    },
+    {
+      "id": "payment-webhook",
+      "task": "finish payment webhook idempotency implementation",
+      "items": [
+        {"id": "d1", "type": "decision", "content": "Payment webhook idempotency keys are provider event IDs.", "relevant": true, "related_files": ["src/payments/webhook.py"]},
+        {"id": "d2", "type": "constraint", "content": "Payment webhook acknowledgement must return before asynchronous fulfillment starts.", "relevant": true, "related_files": ["src/payments/webhook.py"]},
+        {"id": "d3", "type": "open_loop", "content": "Finish duplicate payment webhook idempotency tests.", "relevant": true, "related_files": ["tests/test_webhook.py"]},
+        {"id": "d4", "type": "fact", "content": "Search indexing runs nightly and stores a compact language-specific document representation.", "relevant": false},
+        {"id": "d5", "type": "open_loop", "content": "Discuss quarterly billing copy with finance and localization before changing the pricing page.", "relevant": false}
+      ],
+      "summary_ids": ["d1", "d3", "d5"]
+    },
+    {
+      "id": "cli-config",
+      "task": "complete CLI config precedence tests",
+      "items": [
+        {"id": "e1", "type": "decision", "content": "CLI flags override environment variables and config file values.", "relevant": true, "related_files": ["src/cli/config.py"]},
+        {"id": "e2", "type": "constraint", "content": "Missing CLI config files are allowed but malformed files are errors.", "relevant": true, "related_files": ["src/cli/config.py"]},
+        {"id": "e3", "type": "open_loop", "content": "Complete CLI config precedence tests for flags, environment, and files.", "relevant": true, "related_files": ["tests/test_config.py"]},
+        {"id": "e4", "type": "fact", "content": "The mobile shell caches avatar thumbnails for seven days on both supported platforms.", "relevant": false},
+        {"id": "e5", "type": "open_loop", "content": "Prepare a sample dataset for the sales demonstration and review its fictional company names.", "relevant": false}
+      ],
+      "summary_ids": ["e1", "e3", "e4"]
+    },
+    {
+      "id": "upload-retry",
+      "task": "finish chunked upload retry behavior",
+      "items": [
+        {"id": "f1", "type": "fact", "content": "Chunked upload retries resume from the last acknowledged byte offset.", "relevant": true, "related_files": ["src/upload/client.ts"]},
+        {"id": "f2", "type": "constraint", "content": "Chunked upload retry backoff is capped at thirty seconds.", "relevant": true, "related_files": ["src/upload/client.ts"]},
+        {"id": "f3", "type": "open_loop", "content": "Add chunked upload retry tests for connection resets.", "relevant": true, "related_files": ["tests/upload.test.ts"]},
+        {"id": "f4", "type": "decision", "content": "The settings form uses optimistic updates for preference toggles and rolls back on errors.", "relevant": false},
+        {"id": "f5", "type": "open_loop", "content": "Benchmark two syntax highlighting libraries on large generated source files.", "relevant": false}
+      ],
+      "summary_ids": ["f1", "f3", "f5"]
+    },
+    {
+      "id": "windows-ci",
+      "task": "repair Windows CI path normalization failures",
+      "items": [
+        {"id": "g1", "type": "fact", "content": "Windows CI failures come from path normalization before snapshot comparison.", "relevant": true, "related_files": ["src/paths.py"]},
+        {"id": "g2", "type": "constraint", "content": "Windows paths must preserve drive letters while normalizing separators.", "relevant": true, "related_files": ["src/paths.py"]},
+        {"id": "g3", "type": "open_loop", "content": "Repair Windows CI path normalization snapshots.", "relevant": true, "related_files": ["tests/test_paths.py"]},
+        {"id": "g4", "type": "decision", "content": "Release notes are generated from conventional commit labels during the publish workflow.", "relevant": false},
+        {"id": "g5", "type": "open_loop", "content": "Design an empty state illustration for archived workspaces and request accessibility review.", "relevant": false}
+      ],
+      "summary_ids": ["g1", "g3", "g4"]
+    },
+    {
+      "id": "api-pagination",
+      "task": "complete API cursor pagination edge cases",
+      "items": [
+        {"id": "h1", "type": "decision", "content": "API cursor pagination uses opaque base64url cursors.", "relevant": true, "related_files": ["src/api/pagination.py"]},
+        {"id": "h2", "type": "constraint", "content": "API cursor pagination rejects a cursor created for a different filter set.", "relevant": true, "related_files": ["src/api/pagination.py"]},
+        {"id": "h3", "type": "open_loop", "content": "Complete API cursor pagination tests for empty and final pages.", "relevant": true, "related_files": ["tests/test_pagination.py"]},
+        {"id": "h4", "type": "fact", "content": "The audit export compresses completed reports before moving them to object storage.", "relevant": false},
+        {"id": "h5", "type": "open_loop", "content": "Review all keyboard shortcuts for conflicts with browser and operating-system defaults.", "relevant": false}
+      ],
+      "summary_ids": ["h1", "h3", "h5"]
+    },
+    {
+      "id": "secret-logging",
+      "task": "fix secret redaction in request logging",
+      "items": [
+        {"id": "i1", "type": "decision", "content": "Request logging redacts secrets before serialization.", "relevant": true, "related_files": ["src/logging/redact.py"]},
+        {"id": "i2", "type": "constraint", "content": "Secret redaction must cover authorization headers and nested token fields.", "relevant": true, "related_files": ["src/logging/redact.py"]},
+        {"id": "i3", "type": "open_loop", "content": "Add request logging secret redaction regression tests.", "relevant": true, "related_files": ["tests/test_redact.py"]},
+        {"id": "i4", "type": "fact", "content": "The import wizard remembers the last delimiter selected for each local file extension.", "relevant": false},
+        {"id": "i5", "type": "open_loop", "content": "Measure the animation frame rate on older laptops before enabling transitions by default.", "relevant": false}
+      ],
+      "summary_ids": ["i1", "i3", "i4"]
+    },
+    {
+      "id": "dsh-adapter",
+      "task": "finish DSH adapter cancellation tests",
+      "items": [
+        {"id": "j1", "type": "decision", "content": "The DSH adapter delegates retrieval to the Python ContextBridge CLI.", "relevant": true, "related_files": ["integrations/dsh-plugin/tool.js"]},
+        {"id": "j2", "type": "constraint", "content": "DSH adapter cancellation must forward the tool execution abort signal.", "relevant": true, "related_files": ["integrations/dsh-plugin/tool.js"]},
+        {"id": "j3", "type": "open_loop", "content": "Finish DSH adapter cancellation and missing-workspace tests.", "relevant": true, "related_files": ["integrations/dsh-plugin/test.mjs"]},
+        {"id": "j4", "type": "fact", "content": "The support portal groups resolved tickets by calendar month and product category.", "relevant": false},
+        {"id": "j5", "type": "open_loop", "content": "Write a migration announcement for customers using the deprecated theme endpoint.", "relevant": false}
+      ],
+      "summary_ids": ["j1", "j3", "j5"]
+    }
+  ]
+}

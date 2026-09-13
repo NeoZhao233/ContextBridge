@@ -19,7 +19,11 @@ contextbridge = "contextbridge.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-contextbridge = ["bundled_skills/*/SKILL.md", "bundled_skills/*/agents/openai.yaml"]
+contextbridge = [
+    "benchmarks/*.json",
+    "bundled_skills/*/SKILL.md",
+    "bundled_skills/*/agents/openai.yaml",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

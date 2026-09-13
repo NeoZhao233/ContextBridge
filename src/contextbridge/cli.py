@@ -9,6 +9,7 @@ from .adapters.llm_extractor import LLMMemoryExtractor
 from .app import create_registry, open_database
 from .context_pack import build_context_pack
 from .discovery import discover_sessions
+from .evaluation import evaluate_cases, load_cases, render_report
 from .git_state import current_commit, project_state, stale_memory_ids
 from .llm import OpenAICompatibleClient
 from .skill_install import install_agent_skills
@@ -46,6 +47,11 @@ def parser() -> argparse.ArgumentParser:
     install.add_argument("--agent", choices=["all", "claude-code", "codex"], default="all")
     install.add_argument("--scope", choices=["project", "user"], default="project")
     install.add_argument("--force", action="store_true", help="Update existing skill files")
+
+    evaluate = commands.add_parser("evaluate", help="Run the offline context retrieval benchmark")
+    evaluate.add_argument("--dataset", type=Path, help="Evaluation dataset JSON")
+    evaluate.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    evaluate.add_argument("--output", type=Path)
 
     commands.add_parser("status", help="Show store and plugin status")
     for name in ("inspect", "handoff"):
@@ -97,6 +103,21 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             raise SystemExit(str(error)) from error
         for path in installed:
             print(f"Installed {path}")
+        return 0
+    if options.command == "evaluate":
+        report = evaluate_cases(load_cases(options.dataset))
+        rendered = (
+            render_report(report)
+            if options.format == "markdown"
+            else json.dumps(report.model_dump(), indent=2)
+        )
+        if options.output:
+            output = options.output.resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered + ("" if rendered.endswith("\n") else "\n"), encoding="utf-8")
+            print(f"Wrote evaluation report to {output}")
+        else:
+            print(rendered)
         return 0
     extra_extractor = None
     if options.command in ("sync", "capture") and options.extractor == "llm":
