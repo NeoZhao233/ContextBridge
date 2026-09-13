@@ -220,6 +220,11 @@ for twelve runs measuring test pass rate, input tokens, time, and repeated explo
 and twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
 definitions, current offline results, limitations, and the end-to-end design.
 
+A [live Claude Code → ContextBridge → Codex smoke test](docs/smoke-test.md) has also passed on the
+configuration-precedence fixture. ContextBridge discovered the Claude session, produced a validated
+1,913-token pack, and a fresh Codex session completed the remaining change with both targeted tests
+passing. This is integration evidence only; it is not presented as a comparative benchmark.
+
 The repository also includes executable experiment bookkeeping:
 
 ```bash
