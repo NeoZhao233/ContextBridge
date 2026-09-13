@@ -16,6 +16,15 @@ from contextbridge.context_pack import build_context_pack, estimate_tokens
 from contextbridge.database import ContextDatabase
 from contextbridge.discovery import discover_sessions
 from contextbridge.evaluation import evaluate_cases, load_cases, render_report
+from contextbridge.experiment import (
+    ExperimentCondition,
+    ExperimentManifest,
+    ExperimentRun,
+    ExperimentTask,
+    create_plan,
+    render_experiment_report,
+    score_experiment,
+)
 from contextbridge.models import Memory, MemoryDraft, MemoryType, ProjectState, SourceRef
 from contextbridge.security import redact_secrets
 from contextbridge.skill_install import install_agent_skills
@@ -256,6 +265,64 @@ class ContextBridgeTests(unittest.TestCase):
             },
         )
         self.assertIn("not coding-task completion", render_report(report))
+
+    def test_cross_agent_experiment_plan_is_balanced_and_reproducible(self) -> None:
+        tasks = [
+            ExperimentTask(
+                id=f"task-{index}",
+                title=f"Task {index}",
+                repository="/tmp/repository",
+                base_commit="abc123",
+                stage_a_prompt="Make the first change and stop.",
+                stage_b_prompt="Resume the change and finish tests.",
+                test_command="pytest -q",
+            )
+            for index in range(2)
+        ]
+        manifest = ExperimentManifest(name="resume-study", tasks=tasks)
+        first = create_plan(manifest, seed=7)
+        second = create_plan(manifest, seed=7)
+        self.assertEqual(len(first.assignments), 8)
+        self.assertEqual(
+            [assignment.run_id for assignment in first.assignments],
+            [assignment.run_id for assignment in second.assignments],
+        )
+        for condition in ExperimentCondition:
+            self.assertEqual(
+                sum(assignment.condition == condition for assignment in first.assignments),
+                2,
+            )
+
+    def test_cross_agent_report_preserves_missing_runs(self) -> None:
+        task = ExperimentTask(
+            id="task-1",
+            title="Task 1",
+            repository="/tmp/repository",
+            base_commit="abc123",
+            stage_a_prompt="Start the task.",
+            stage_b_prompt="Finish the task.",
+            test_command="pytest -q",
+        )
+        plan = create_plan(ExperimentManifest(name="resume-study", tasks=[task]))
+        run = ExperimentRun(
+            run_id="task-1--contextbridge",
+            agent_a="claude-code",
+            agent_b="codex",
+            model_a="model-a",
+            model_b="model-b",
+            tests_passed=True,
+            duration_seconds=120,
+            input_tokens=2000,
+            repeated_exploration=1,
+            incorrect_assumptions=0,
+        )
+        report = score_experiment(plan, [run])
+        self.assertEqual(report.completed, 1)
+        self.assertEqual(report.planned, 4)
+        self.assertEqual(len(report.missing_run_ids), 3)
+        self.assertIn("Completed: 1/4", render_experiment_report(report))
+        with self.assertRaises(ValueError):
+            score_experiment(plan, [run, run])
 
 
 if __name__ == "__main__":

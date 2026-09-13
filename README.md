@@ -180,9 +180,25 @@ It compares no context, verbose synthetic history, a controlled one-shot-summary
 ContextBridge across ten cases. It reports required-memory recall, precision, source coverage, and
 estimated input tokens. This is a retrieval regression suite, not a coding-task success claim.
 
-The second evaluation layer remains ten real two-stage coding tasks measuring test pass rate, input
-tokens, time, and repeated exploration. See [the evaluation protocol](docs/evaluation.md) for metric
-definitions, current offline results, limitations, and the planned end-to-end design.
+The second evaluation layer starts with three real two-stage coding tasks under all four conditions,
+for twelve runs measuring test pass rate, input tokens, time, and repeated exploration. Five tasks
+and twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
+definitions, current offline results, limitations, and the end-to-end design.
+
+The repository also includes executable experiment bookkeeping:
+
+```bash
+contextbridge experiment-plan \
+  --manifest experiments/tasks.example.json \
+  --output experiments/plan.json
+
+contextbridge experiment-report \
+  --plan experiments/plan.json \
+  --results experiments/results.jsonl
+```
+
+Plans assign every task to all four conditions in seeded random order. Reports reject duplicate or
+unknown run IDs and leave incomplete runs visible rather than silently dropping them.
 
 ## Non-goals
 

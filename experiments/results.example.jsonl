@@ -1,0 +1,1 @@
+{"run_id":"auth-refresh--contextbridge","agent_a":"claude-code","agent_b":"codex","model_a":"pin-exact-model","model_b":"pin-exact-model","tests_passed":true,"duration_seconds":240.0,"input_tokens":3200,"repeated_exploration":1,"incorrect_assumptions":0,"trace_path":"traces/auth-refresh--contextbridge.jsonl","notes":"Example only; do not include in reported results."}

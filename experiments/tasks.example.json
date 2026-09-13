@@ -1,0 +1,32 @@
+{
+  "name": "contextbridge-resume-study",
+  "tasks": [
+    {
+      "id": "auth-refresh",
+      "title": "Resume an authentication refactor",
+      "repository": "/absolute/path/to/fixture-repository",
+      "base_commit": "replace-with-pinned-commit",
+      "stage_a_prompt": "Refactor refresh-token validation, document the chosen replay policy, and stop before adding regression tests.",
+      "stage_b_prompt": "Finish the refresh-token work and make the relevant tests pass.",
+      "test_command": "pytest tests/test_refresh_tokens.py -q"
+    },
+    {
+      "id": "cache-race",
+      "title": "Resume a cache invalidation fix",
+      "repository": "/absolute/path/to/fixture-repository",
+      "base_commit": "replace-with-pinned-commit",
+      "stage_a_prompt": "Diagnose the profile cache race, choose an invalidation point, implement the core change, and stop before integration tests.",
+      "stage_b_prompt": "Complete the profile cache race fix and make the relevant tests pass.",
+      "test_command": "pytest tests/test_profile_cache.py -q"
+    },
+    {
+      "id": "cli-precedence",
+      "title": "Resume a CLI configuration change",
+      "repository": "/absolute/path/to/fixture-repository",
+      "base_commit": "replace-with-pinned-commit",
+      "stage_a_prompt": "Implement CLI and environment configuration precedence, record edge-case decisions, and stop before completing tests.",
+      "stage_b_prompt": "Finish configuration precedence behavior and make the relevant tests pass.",
+      "test_command": "pytest tests/test_config.py -q"
+    }
+  ]
+}

@@ -10,6 +10,15 @@ from .app import create_registry, open_database
 from .context_pack import build_context_pack
 from .discovery import discover_sessions
 from .evaluation import evaluate_cases, load_cases, render_report
+from .experiment import (
+    create_plan,
+    load_manifest,
+    load_plan,
+    load_runs,
+    render_experiment_report,
+    score_experiment,
+    write_json,
+)
 from .git_state import current_commit, project_state, stale_memory_ids
 from .llm import OpenAICompatibleClient
 from .skill_install import install_agent_skills
@@ -52,6 +61,21 @@ def parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--dataset", type=Path, help="Evaluation dataset JSON")
     evaluate.add_argument("--format", choices=["markdown", "json"], default="markdown")
     evaluate.add_argument("--output", type=Path)
+
+    experiment_plan = commands.add_parser(
+        "experiment-plan", help="Create a seeded, balanced cross-agent experiment plan"
+    )
+    experiment_plan.add_argument("--manifest", required=True, type=Path)
+    experiment_plan.add_argument("--output", required=True, type=Path)
+    experiment_plan.add_argument("--seed", type=int, default=42)
+
+    experiment_report = commands.add_parser(
+        "experiment-report", help="Validate and aggregate cross-agent experiment results"
+    )
+    experiment_report.add_argument("--plan", required=True, type=Path)
+    experiment_report.add_argument("--results", required=True, type=Path)
+    experiment_report.add_argument("--format", choices=["markdown", "json"], default="markdown")
+    experiment_report.add_argument("--output", type=Path)
 
     commands.add_parser("status", help="Show store and plugin status")
     for name in ("inspect", "handoff"):
@@ -116,6 +140,26 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(rendered + ("" if rendered.endswith("\n") else "\n"), encoding="utf-8")
             print(f"Wrote evaluation report to {output}")
+        else:
+            print(rendered)
+        return 0
+    if options.command == "experiment-plan":
+        plan = create_plan(load_manifest(options.manifest), options.seed)
+        write_json(options.output.resolve(), plan)
+        print(f"Wrote {len(plan.assignments)} experiment runs to {options.output.resolve()}")
+        return 0
+    if options.command == "experiment-report":
+        report = score_experiment(load_plan(options.plan), load_runs(options.results))
+        rendered = (
+            render_experiment_report(report)
+            if options.format == "markdown"
+            else json.dumps(report.model_dump(mode="json"), indent=2)
+        )
+        if options.output:
+            output = options.output.resolve()
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(rendered + ("" if rendered.endswith("\n") else "\n"), encoding="utf-8")
+            print(f"Wrote experiment report to {output}")
         else:
             print(rendered)
         return 0
