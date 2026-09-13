@@ -211,12 +211,14 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
                 memory_count += memories
             database.mark_possibly_stale(stale_memory_ids(project, database.memories()))
             candidates = database.search_memories(options.task, max(100, options.limit * 5))
+            excerpts = database.search_events(options.task, max(50, options.limit * 3))
             pack = build_context_pack(
                 options.task,
                 candidates,
                 options.limit,
                 options.token_budget,
                 project_state(project),
+                excerpts,
             )
             rendered = registry.target("markdown").render(pack)
             if options.output:
@@ -235,12 +237,14 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
         else:
             database.mark_possibly_stale(stale_memory_ids(project, database.memories()))
             candidates = database.search_memories(options.task, max(100, options.limit * 5))
+            excerpts = database.search_events(options.task, max(50, options.limit * 3))
             pack = build_context_pack(
                 options.task,
                 candidates,
                 options.limit,
                 options.token_budget,
                 project_state(project),
+                excerpts,
             )
             rendered = registry.target("markdown").render(pack)
             if options.command == "handoff" and options.output:

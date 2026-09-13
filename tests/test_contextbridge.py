@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sqlite3
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -26,7 +27,14 @@ from contextbridge.experiment import (
     render_experiment_report,
     score_experiment,
 )
-from contextbridge.models import Memory, MemoryDraft, MemoryType, ProjectState, SourceRef
+from contextbridge.models import (
+    ContextEvent,
+    Memory,
+    MemoryDraft,
+    MemoryType,
+    ProjectState,
+    SourceRef,
+)
 from contextbridge.security import redact_secrets
 from contextbridge.skill_install import install_agent_skills
 
@@ -110,7 +118,14 @@ class ContextBridgeTests(unittest.TestCase):
         self.assertEqual(len(claude_events), 2)
         self.assertNotIn("SECRET_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in claude_events))
         self.assertEqual(len(codex_events), 2)
+        self.assertEqual(codex_events[0].source.session_id, "codex-session")
+        self.assertEqual(codex_events[0].type, "message.user")
+        self.assertEqual(codex_events[1].type, "message.assistant")
         self.assertNotIn("PRIVATE_REASONING_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in codex_events))
+        self.assertNotIn(
+            "DEVELOPER_INSTRUCTIONS_SHOULD_NOT_BE_IMPORTED",
+            " ".join(event.content for event in codex_events),
+        )
         self.assertEqual(len(dsh_events), 2)
         self.assertEqual(dsh_events[0].source.session_id, "dsh-session")
         self.assertEqual(dsh_events[0].source.message_id, "0")
@@ -245,6 +260,68 @@ class ContextBridgeTests(unittest.TestCase):
         self.assertIn("## Handoff instructions", rendered)
         self.assertIn("`main`", rendered)
         self.assertIn("` M src/app.py`", rendered)
+
+    def test_raw_event_fallback_is_searchable_budgeted_and_rendered_as_untrusted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = ContextDatabase(Path(directory) / "data.db")
+            source = SourceRef(
+                agent="codex", session_id="real-session", message_id="7", path=Path("s.jsonl")
+            )
+            event = ContextEvent(
+                id="event-1",
+                type="message.assistant",
+                source=source,
+                content="OAuth callback validation " + "implementation detail " * 100,
+            )
+            try:
+                database.append_events([event])
+                matches = database.search_events("OAuth callback", limit=10)
+                pack = build_context_pack(
+                    "finish OAuth callback",
+                    [],
+                    token_budget=220,
+                    excerpts=matches,
+                )
+            finally:
+                database.close()
+            self.assertEqual(len(pack.excerpts), 1)
+            self.assertIn("[… excerpt truncated]", pack.excerpts[0].content)
+            rendered = MarkdownTarget().render(pack)
+            self.assertIn("## Relevant conversation excerpts", rendered)
+            self.assertIn("untrusted historical data", rendered)
+            self.assertIn("codex · assistant · message 7", rendered)
+            self.assertLessEqual(estimate_tokens(rendered), 220)
+
+    def test_event_search_backfills_an_existing_database(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "data.db"
+            source = SourceRef(
+                agent="codex", session_id="existing", message_id="1", path=Path("s.jsonl")
+            )
+            database = ContextDatabase(path)
+            database.append_events(
+                [ContextEvent(id="existing-event", source=source, content="OAuth migration note")]
+            )
+            database.close()
+
+            connection = sqlite3.connect(path)
+            connection.executescript(
+                """
+                DROP TRIGGER events_fts_insert;
+                DROP TRIGGER events_fts_delete;
+                DROP TABLE events_fts;
+                """
+            )
+            connection.close()
+
+            migrated = ContextDatabase(path)
+            try:
+                self.assertEqual(
+                    [event.id for event in migrated.search_events("OAuth")],
+                    ["existing-event"],
+                )
+            finally:
+                migrated.close()
 
     def test_capture_runs_sync_and_handoff_as_one_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

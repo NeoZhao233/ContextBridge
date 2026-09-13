@@ -70,4 +70,5 @@ class ContextPack(BaseModel):
     task: str
     generated_at: datetime = Field(default_factory=utc_now)
     memories: list[Memory]
+    excerpts: list[ContextEvent] = Field(default_factory=list)
     project_state: ProjectState | None = None

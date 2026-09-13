@@ -45,6 +45,17 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     reason,
     related_files
 );
+CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
+    event_id UNINDEXED,
+    content
+);
+CREATE TRIGGER IF NOT EXISTS events_fts_insert AFTER INSERT ON events BEGIN
+    INSERT INTO events_fts(rowid, event_id, content)
+    VALUES (new.rowid, new.id, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS events_fts_delete AFTER DELETE ON events BEGIN
+    DELETE FROM events_fts WHERE rowid = old.rowid;
+END;
 CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN
     INSERT INTO memories_fts(rowid, memory_id, content, reason, related_files)
     VALUES (new.rowid, new.id, new.content, coalesce(new.reason, ''), new.related_files);
@@ -73,14 +84,18 @@ class ContextDatabase:
                SELECT rowid, id, content, coalesce(reason, ''), related_files FROM memories
                WHERE rowid NOT IN (SELECT rowid FROM memories_fts)"""
         )
+        self.connection.execute(
+            """INSERT INTO events_fts(rowid, event_id, content)
+               SELECT rowid, id, content FROM events
+               WHERE rowid NOT IN (SELECT rowid FROM events_fts)"""
+        )
         self.connection.commit()
 
     def close(self) -> None:
         self.connection.close()
 
     def append_events(self, events: list[ContextEvent]) -> int:
-        before = self.connection.total_changes
-        self.connection.executemany(
+        cursor = self.connection.executemany(
             """INSERT OR IGNORE INTO events
                (id, type, occurred_at, source_agent, source_session, source_message,
                 source_path, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -99,7 +114,7 @@ class ContextDatabase:
             ],
         )
         self.connection.commit()
-        return self.connection.total_changes - before
+        return max(cursor.rowcount, 0)
 
     def append_memories(self, drafts: list[MemoryDraft], source_commit: str | None) -> int:
         rows = []
@@ -154,6 +169,29 @@ class ContextDatabase:
         rows = self.connection.execute("SELECT * FROM memories ORDER BY created_at DESC").fetchall()
         return [self._to_memory(row) for row in rows]
 
+    def events(self, limit: int = 100) -> list[ContextEvent]:
+        rows = self.connection.execute(
+            "SELECT * FROM events ORDER BY occurred_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [self._to_event(row) for row in rows]
+
+    def search_events(self, query: str, limit: int = 100) -> list[ContextEvent]:
+        terms = list(dict.fromkeys(re.findall(r"[\w./-]{2,}", query.lower())))
+        if not terms:
+            return self.events(limit)
+        expression = " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms)
+        rows = self.connection.execute(
+            """SELECT events.* FROM events_fts
+               JOIN events ON events.rowid = events_fts.rowid
+               WHERE events_fts MATCH ?
+               ORDER BY bm25(events_fts), events.occurred_at DESC
+               LIMIT ?""",
+            (expression, limit),
+        ).fetchall()
+        if not rows:
+            return self.events(limit)
+        return [self._to_event(row) for row in rows]
+
     def search_memories(self, query: str, limit: int = 100) -> list[Memory]:
         terms = list(dict.fromkeys(re.findall(r"[\w./-]{2,}", query.lower())))
         if not terms:
@@ -188,6 +226,21 @@ class ContextDatabase:
             source_commit=row["source_commit"],
             status=MemoryStatus(row["status"]),
             created_at=row["created_at"],
+        )
+
+    @staticmethod
+    def _to_event(row: sqlite3.Row) -> ContextEvent:
+        return ContextEvent(
+            id=row["id"],
+            type=row["type"],
+            occurred_at=row["occurred_at"],
+            source=SourceRef(
+                agent=row["source_agent"],
+                session_id=row["source_session"],
+                message_id=row["source_message"],
+                path=Path(row["source_path"]),
+            ),
+            content=row["content"],
         )
 
     def mark_possibly_stale(self, memory_ids: list[str]) -> int:

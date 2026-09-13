@@ -63,6 +63,9 @@ class JsonlSource(ABC):
         timestamp = record.get("timestamp")
         return datetime.fromisoformat(timestamp) if isinstance(timestamp, str) else None
 
+    def event_type_from(self, record: dict[str, Any]) -> str:
+        return "message.observed"
+
     def sync(self, path: Path, cursor: str | None = None) -> SyncResult:
         lines = [line for line in read_session_text(path).splitlines() if line]
         start = min(int(cursor or 0), len(lines))
@@ -80,6 +83,7 @@ class JsonlSource(ABC):
             identity = f"{self.name}\0{path}\0{message_id}\0{content}"
             event_data: dict[str, Any] = {
                 "id": hashlib.sha256(identity.encode()).hexdigest(),
+                "type": self.event_type_from(record),
                 "source": SourceRef(
                     agent=self.name,
                     session_id=session_id,
@@ -102,13 +106,35 @@ class ClaudeCodeSource(JsonlSource):
             return None
         return collect_text(record.get("message") or record.get("content"))
 
+    def event_type_from(self, record: dict[str, Any]) -> str:
+        role = record.get("type")
+        return f"message.{role}" if role in ("user", "assistant") else super().event_type_from(record)
+
 
 class CodexSource(JsonlSource):
     name = "codex"
 
+    def session_id_from(self, path: Path, lines: list[str]) -> str:
+        if lines:
+            try:
+                header = json.loads(lines[0])
+            except json.JSONDecodeError:
+                header = None
+            if isinstance(header, dict) and header.get("type") == "session_meta":
+                payload = header.get("payload")
+                if isinstance(payload, dict) and isinstance(payload.get("id"), str):
+                    return payload["id"]
+        return super().session_id_from(path, lines)
+
     def text_from(self, record: dict[str, Any]) -> str | None:
         payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
-        if record.get("type") == "response_item" and payload.get("type") != "message":
+        if (
+            record.get("type") == "response_item"
+            and (payload.get("type") != "message" or payload.get("role") not in (
+                "user",
+                "assistant",
+            ))
+        ):
             return None
         return collect_text(
             payload.get("message")
@@ -116,6 +142,13 @@ class CodexSource(JsonlSource):
             or record.get("message")
             or record.get("content")
         )
+
+    def event_type_from(self, record: dict[str, Any]) -> str:
+        payload = record.get("payload") if isinstance(record.get("payload"), dict) else {}
+        role = payload.get("role")
+        if role in ("user", "assistant"):
+            return f"message.{role}"
+        return super().event_type_from(record)
 
 
 class DshSource(JsonlSource):
@@ -159,3 +192,11 @@ class DshSource(JsonlSource):
         if record.get("type") == "assistant/message":
             return collect_text(data.get("message"))
         return None
+
+    def event_type_from(self, record: dict[str, Any]) -> str:
+        event_type = record.get("type")
+        if event_type == "user/message":
+            return "message.user"
+        if event_type == "assistant/message":
+            return "message.assistant"
+        return super().event_type_from(record)

@@ -21,6 +21,7 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 - SQLite-backed local event and memory storage.
 - Every memory retains its source agent, session, message, and file.
 - SQLite FTS5 retrieval and task-aware Context Pack ranking.
+- Zero-configuration fallback to task-relevant, token-bounded conversation excerpts.
 - Provider-neutral token-budget enforcement with Markdown output.
 - File-level Git staleness warnings.
 - Basic secret redaction and inspect-before-handoff workflow.
@@ -116,9 +117,12 @@ contextbridge capture \
 ```
 
 The receiving agent reads `.contextbridge/handoff.md`. The pack contains the task, branch and
-commit, working-tree changes, recent commits, ranked memories, provenance, and stale-memory
-warnings. Use `--extractor llm` with the provider variables above for ordinary conversations; the
-offline default extracts only explicit `FACT:`, `DECISION:`, `CONSTRAINT:`, and `TODO:` notes.
+commit, working-tree changes, recent commits, ranked memories, provenance, stale-memory warnings,
+and a small set of task-relevant conversation excerpts. The excerpts make ordinary conversations
+usable without another API call and are clearly marked as untrusted historical data. Use
+`--extractor llm` with the provider variables above when you also want durable structured memories;
+the offline extractor derives structured memories only from explicit `FACT:`, `DECISION:`,
+`CONSTRAINT:`, and `TODO:` notes.
 
 ### Agent commands
 
@@ -161,9 +165,9 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 Fixtures cover common Claude Code `user`/`assistant` records, Codex `response_item` messages, and
-DSH `user/message` and `assistant/message` events. Tool results, replacement summaries, streaming
-chunks, image payloads, and private reasoning records are intentionally excluded from memory
-extraction.
+DSH `user/message` and `assistant/message` events. Tool results, developer instructions,
+replacement summaries, streaming chunks, image payloads, and private reasoning records are
+intentionally excluded from handoff content.
 
 ## Architecture
 

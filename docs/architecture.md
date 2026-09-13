@@ -48,15 +48,21 @@ making compression a core dependency.
 
 ## Storage model
 
-SQLite contains three durable tables plus an FTS projection:
+SQLite contains three durable tables plus two FTS projections:
 
 - `events`: immutable observations with source attribution;
 - `memories`: rebuildable facts, decisions, constraints, and open loops;
 - `sync_cursors`: per-source incremental import positions.
 
-An FTS5 projection indexes memory content, rationale, and related files. Context Pack construction
-uses FTS candidates, type/recency relevance, and a conservative Latin/CJK token estimate to remain
-inside a caller-provided budget without binding the core to one tokenizer or model vendor.
+One FTS5 projection indexes memory content, rationale, and related files; the other indexes
+normalized conversation events. Context Pack construction prefers structured memories and fills
+remaining budget with a maximum of six task-relevant raw excerpts. Oversized excerpts are
+truncated, source attribution is retained, and the target marks them as untrusted history. This
+provides an offline fallback for natural conversations without pretending raw messages are facts
+or decisions.
+
+Selection uses FTS candidates, type/recency relevance, and a conservative Latin/CJK token estimate
+to remain inside a caller-provided budget without binding the core to one tokenizer or model vendor.
 
 Memory IDs are content-addressed, making repeated imports idempotent. Each memory records the source agent, session, message, file, and Git commit when available.
 
@@ -70,7 +76,7 @@ project root
     ├──► discover newest matching Claude Code / Codex / configured DSH sessions
     ├──► incrementally sync and extract memories
     ├──► snapshot branch, commit, working tree, and recent commits
-    └──► retrieve task-relevant memories and render an agent-ready pack
+    └──► retrieve task-relevant memories plus bounded excerpts and render an agent-ready pack
 ```
 
 Discovery reads only a bounded prefix of session files and can be bypassed with an explicit source
@@ -90,5 +96,6 @@ avoids duplicating extraction or retrieval logic.
 - Three focused plugin seams rather than a Cordis reimplementation.
 - File-level Git staleness warnings rather than semantic invalidation.
 - Structured-note extraction for deterministic offline demos.
+- FTS-ranked raw excerpts as the no-API fallback for ordinary conversations.
 - An OpenAI-compatible LLM extractor for natural-language conversations, with source validation,
   path validation, and pre-request secret redaction.
