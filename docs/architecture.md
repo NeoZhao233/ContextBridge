@@ -73,6 +73,11 @@ Discovery reads only a bounded prefix of session files and can be bypassed with 
 and path. The result stays as inspectable Markdown instead of mutating another agent's private
 session store.
 
+Claude Code and Codex consume this workflow through two shared Agent Skills. The installer places
+the bundled skills in each host's native discovery directory; the skill text only orchestrates the
+CLI and validates its result. This keeps host-specific invocation conventions outside the core and
+avoids duplicating extraction or retrieval logic.
+
 ## Deliberate MVP boundaries
 
 - Explicit, on-demand capture rather than a background daemon.

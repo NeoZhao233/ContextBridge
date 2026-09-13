@@ -1,0 +1,4 @@
+interface:
+  display_name: "ContextBridge Handoff"
+  short_description: "Capture work for another coding agent"
+  default_prompt: "Hand off my current coding task with ContextBridge."

@@ -25,6 +25,7 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 - Small `SourcePlugin`, `ExtractorPlugin`, and `TargetPlugin` contracts.
 - Thin DSH tool plugin that loads Context Packs for the active DSH workspace.
 - One-command capture with project-aware session discovery and a Git-aware handoff pack.
+- Shared handoff/resume Agent Skills installable for both Claude Code and Codex.
 
 The deterministic MVP extractor recognizes explicit notes in session text:
 
@@ -96,6 +97,30 @@ The receiving agent reads `.contextbridge/handoff.md`. The pack contains the tas
 commit, working-tree changes, recent commits, ranked memories, provenance, and stale-memory
 warnings. Use `--extractor llm` with the provider variables above for ordinary conversations; the
 offline default extracts only explicit `FACT:`, `DECISION:`, `CONSTRAINT:`, and `TODO:` notes.
+
+### Agent commands
+
+Install the bundled skills into the current repository:
+
+```bash
+contextbridge install-skills --agent all --scope project
+```
+
+This creates the same two skills under `.agents/skills` for Codex and `.claude/skills` for Claude
+Code. Use `--scope user` to make them available in every project, or `--force` to update an existing
+installation.
+
+In the agent interfaces:
+
+```text
+Codex:       $contextbridge-handoff / $contextbridge-resume
+Claude Code: /contextbridge-handoff /contextbridge-resume
+```
+
+The handoff skill derives the continuation task, invokes `capture`, and reviews the generated pack.
+The resume skill treats the pack as historical context, verifies it against the working tree, and
+continues the requested task. Both are thin orchestration layers: storage and retrieval remain in
+the Python core.
 
 Without installing the package:
 

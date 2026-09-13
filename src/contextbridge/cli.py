@@ -11,6 +11,7 @@ from .context_pack import build_context_pack
 from .discovery import discover_sessions
 from .git_state import current_commit, project_state, stale_memory_ids
 from .llm import OpenAICompatibleClient
+from .skill_install import install_agent_skills
 
 
 def parser() -> argparse.ArgumentParser:
@@ -38,6 +39,13 @@ def parser() -> argparse.ArgumentParser:
     capture.add_argument("--limit", type=int, default=20)
     capture.add_argument("--token-budget", type=int, default=4000)
     capture.add_argument("--output", type=Path)
+
+    install = commands.add_parser(
+        "install-skills", help="Install handoff and resume skills for coding agents"
+    )
+    install.add_argument("--agent", choices=["all", "claude-code", "codex"], default="all")
+    install.add_argument("--scope", choices=["project", "user"], default="project")
+    install.add_argument("--force", action="store_true", help="Update existing skill files")
 
     commands.add_parser("status", help="Show store and plugin status")
     for name in ("inspect", "handoff"):
@@ -82,6 +90,14 @@ def _sync_session(
 def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
     options = parser().parse_args(arguments)
     project = (cwd or Path.cwd()).resolve()
+    if options.command == "install-skills":
+        try:
+            installed = install_agent_skills(options.agent, options.scope, project, force=options.force)
+        except FileExistsError as error:
+            raise SystemExit(str(error)) from error
+        for path in installed:
+            print(f"Installed {path}")
+        return 0
     extra_extractor = None
     if options.command in ("sync", "capture") and options.extractor == "llm":
         extra_extractor = _llm_extractor(options)

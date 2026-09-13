@@ -17,6 +17,7 @@ from contextbridge.database import ContextDatabase
 from contextbridge.discovery import discover_sessions
 from contextbridge.models import Memory, MemoryDraft, MemoryType, ProjectState, SourceRef
 from contextbridge.security import redact_secrets
+from contextbridge.skill_install import install_agent_skills
 
 
 class ContextBridgeTests(unittest.TestCase):
@@ -205,6 +206,31 @@ class ContextBridgeTests(unittest.TestCase):
             handoff = output.read_text(encoding="utf-8")
             self.assertIn("Finish src/contextbridge/cli.py", handoff)
             self.assertIn("## Repository state", handoff)
+
+    def test_installs_shared_skills_for_codex_and_claude_code(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            installed = install_agent_skills("all", "project", project)
+            self.assertEqual(len(installed), 4)
+            codex_resume = project / ".agents/skills/contextbridge-resume/SKILL.md"
+            claude_handoff = project / ".claude/skills/contextbridge-handoff/SKILL.md"
+            self.assertIn("name: contextbridge-resume", codex_resume.read_text(encoding="utf-8"))
+            self.assertIn("contextbridge capture", claude_handoff.read_text(encoding="utf-8"))
+            with self.assertRaises(FileExistsError):
+                install_agent_skills("codex", "project", project)
+            self.assertEqual(len(install_agent_skills("codex", "project", project, force=True)), 2)
+
+            cli_project = project / "cli-project"
+            cli_project.mkdir()
+            with redirect_stdout(StringIO()):
+                self.assertEqual(
+                    run(["install-skills", "--agent", "codex"], cwd=cli_project),
+                    0,
+                )
+            self.assertTrue(
+                (cli_project / ".agents/skills/contextbridge-resume/SKILL.md").is_file()
+            )
+            self.assertFalse((cli_project / ".contextbridge").exists())
 
 
 if __name__ == "__main__":

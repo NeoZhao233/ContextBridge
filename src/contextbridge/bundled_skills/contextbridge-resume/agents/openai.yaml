@@ -1,0 +1,4 @@
+interface:
+  display_name: "ContextBridge Resume"
+  short_description: "Continue work from another coding agent"
+  default_prompt: "Resume the current project task from ContextBridge."
