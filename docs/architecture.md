@@ -37,10 +37,14 @@ Task ─────────────────────────
 The MVP uses Python `Protocol` definitions instead of building a general dependency-injection
 framework. DSH integration remains a thin JavaScript plugin that invokes the Python CLI.
 
-The initial DSH target adapter is implemented as a small JavaScript plugin. It registers a typed
+The DSH target adapter is implemented as a small JavaScript plugin. It registers a typed
 `contextbridge_handoff` tool through DSH's public `tools` service, derives the project root from the
 calling session, and delegates retrieval to the Python CLI. It does not duplicate storage or
-retrieval logic.
+retrieval logic. A separate Python source adapter imports DSH's current v3 append-only
+`SessionEvent` JSONL: only durable, append-origin `user/message` and `assistant/message` events
+cross the trust boundary, while headers, replacement summaries, reasoning, and tool results are
+ignored. The optional zstandard reader handles DSH's default concatenated-frame persistence without
+making compression a core dependency.
 
 ## Storage model
 
@@ -63,15 +67,16 @@ Memory IDs are content-addressed, making repeated imports idempotent. Each memor
 ```text
 project root
     │
-    ├──► discover newest matching Claude Code / Codex sessions
+    ├──► discover newest matching Claude Code / Codex / configured DSH sessions
     ├──► incrementally sync and extract memories
     ├──► snapshot branch, commit, working tree, and recent commits
     └──► retrieve task-relevant memories and render an agent-ready pack
 ```
 
 Discovery reads only a bounded prefix of session files and can be bypassed with an explicit source
-and path. The result stays as inspectable Markdown instead of mutating another agent's private
-session store.
+and path. Because DSH's persistence root is deployment-controlled, its discovery is enabled with
+`CONTEXTBRIDGE_DSH_SESSION_ROOT`. The result stays as inspectable Markdown instead of mutating
+another agent's private session store.
 
 Claude Code and Codex consume this workflow through two shared Agent Skills. The installer places
 the bundled skills in each host's native discovery directory; the skill text only orchestrates the

@@ -12,6 +12,9 @@ license = "MIT"
 authors = [{ name = "Yaolong Zhao" }]
 dependencies = ["pydantic>=2.9,<3"]
 
+[project.optional-dependencies]
+dsh = ["zstandard>=0.23,<1"]
+
 [project.scripts]
 contextbridge = "contextbridge.cli:main"
 

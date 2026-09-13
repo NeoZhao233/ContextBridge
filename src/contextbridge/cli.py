@@ -30,7 +30,7 @@ def parser() -> argparse.ArgumentParser:
     commands.add_parser("init", help="Initialize local ContextBridge storage")
 
     sync = commands.add_parser("sync", help="Incrementally import a session")
-    sync.add_argument("--source", required=True, choices=["claude-code", "codex"])
+    sync.add_argument("--source", required=True, choices=["claude-code", "codex", "dsh"])
     sync.add_argument("--path", required=True, type=Path)
     sync.add_argument("--extractor", choices=["structured-notes", "llm"], default="structured-notes")
     sync.add_argument("--model", help="OpenAI-compatible model name; or CONTEXTBRIDGE_MODEL")
@@ -40,7 +40,9 @@ def parser() -> argparse.ArgumentParser:
         "capture", help="Discover sessions, sync them, and emit an agent-ready Context Pack"
     )
     capture.add_argument("--task", required=True)
-    capture.add_argument("--source", choices=["auto", "claude-code", "codex"], default="auto")
+    capture.add_argument(
+        "--source", choices=["auto", "claude-code", "codex", "dsh"], default="auto"
+    )
     capture.add_argument("--path", action="append", type=Path, help="Explicit session JSONL path")
     capture.add_argument("--sessions-per-source", type=int, default=1)
     capture.add_argument("--extractor", choices=["structured-notes", "llm"], default="structured-notes")
@@ -183,7 +185,11 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             if options.path:
                 sessions = [(options.source, path) for path in options.path]
             else:
-                source_names = ["claude-code", "codex"] if options.source == "auto" else [options.source]
+                source_names = (
+                    ["claude-code", "codex", "dsh"]
+                    if options.source == "auto"
+                    else [options.source]
+                )
                 for source_name in source_names:
                     sessions.extend(
                         (source_name, path)

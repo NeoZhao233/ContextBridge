@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/NeoZhao233/ContextBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/NeoZhao233/ContextBridge/actions/workflows/ci.yml)
 
-ContextBridge is a local-first context handoff harness for coding agents. It turns selected Claude Code and Codex session messages into attributed project memories, then builds a compact, task-specific Context Pack for the next agent.
+ContextBridge is a local-first context handoff harness for coding agents. It turns selected Claude
+Code, Codex, and DeepSeek Harness (DSH) session messages into attributed project memories, then
+builds a compact, task-specific Context Pack for the next agent.
 
 The project borrows DeepSeek Harness's "everything is a plugin" principle while deliberately keeping the resume-project MVP small: sources, extractors, and targets are plugins; the core owns only stable contracts, storage, ranking, and provenance.
 
@@ -14,7 +16,7 @@ ContextBridge keeps a local, inspectable project memory and generates only the c
 
 ## MVP capabilities
 
-- Incremental, idempotent JSONL ingestion for Claude Code and Codex.
+- Incremental, idempotent JSONL ingestion for Claude Code, Codex, and DSH.
 - Four memory types: facts, decisions, constraints, and open loops.
 - SQLite-backed local event and memory storage.
 - Every memory retains its source agent, session, message, and file.
@@ -82,13 +84,33 @@ contextbridge capture \
 ```
 
 Run it from the project root. ContextBridge searches for the newest Claude Code and Codex JSONL
-sessions whose metadata references that project, so copying the transcript is unnecessary. If
-automatic discovery cannot identify a session, select it explicitly:
+sessions whose metadata references that project, so copying the transcript is unnecessary. DSH
+requires an explicit persistence root because its host application deliberately controls that
+location:
+
+```bash
+export CONTEXTBRIDGE_DSH_SESSION_ROOT=/absolute/path/to/dsh-session-root
+```
+
+ContextBridge imports DSH's current v3 format. DSH normally persists
+`session.v3.jsonl.zstd`; install the optional reader once with `pip install -e '.[dsh]'`.
+Uncompressed DSH JSONL works with the base installation. If automatic discovery cannot identify
+any session, select one explicitly:
 
 ```bash
 contextbridge capture \
   --source claude-code \
   --path /path/to/session.jsonl \
+  --task "finish the authentication refactor" \
+  --output .contextbridge/handoff.md
+```
+
+For example, an explicit DSH handoff capture is:
+
+```bash
+contextbridge capture \
+  --source dsh \
+  --path /path/to/session.v3.jsonl.zstd \
   --task "finish the authentication refactor" \
   --output .contextbridge/handoff.md
 ```
@@ -138,8 +160,9 @@ PYTHONPATH=src python -m contextbridge.cli inspect \
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-Fixtures cover common Claude Code `user`/`assistant` records and Codex `response_item` messages.
-Tool results, image payloads, and private reasoning records are intentionally excluded from memory
+Fixtures cover common Claude Code `user`/`assistant` records, Codex `response_item` messages, and
+DSH `user/message` and `assistant/message` events. Tool results, replacement summaries, streaming
+chunks, image payloads, and private reasoning records are intentionally excluded from memory
 extraction.
 
 ## Architecture
@@ -164,9 +187,9 @@ Task ─────────────────────────
 
 Adding a third agent should require a new source or target plugin without changing storage or ranking. See [the architecture notes](docs/architecture.md).
 
-The first third-party integration is the [DSH adapter](integrations/dsh-plugin/README.md). It keeps
-DSH-specific lifecycle and tool registration in a thin JavaScript package while the Python Core
-remains agent-independent.
+The first third-party integration is the [DSH adapter](integrations/dsh-plugin/README.md). Its thin
+JavaScript target lets a running DSH agent request Context Packs, while the Python DSH source reads
+the same append-only session format used by the host. Storage and ranking remain agent-independent.
 
 ## Resume-project evaluation
 
@@ -206,7 +229,7 @@ The MVP does not provide cloud sync, multi-user collaboration, a plugin marketpl
 
 ## Status
 
-Early MVP. Claude Code does not publish a stable transcript schema, and Codex rollout records may
+Early MVP. Claude Code does not publish a stable transcript schema, and Codex and DSH records may
 evolve, so adapters parse defensively and test explicit fixtures rather than claiming universal
 compatibility.
 

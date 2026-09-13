@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from contextbridge.adapters.extractors import StructuredNotesExtractor
 from contextbridge.adapters.llm_extractor import LLMMemoryExtractor
-from contextbridge.adapters.sources import ClaudeCodeSource, CodexSource
+from contextbridge.adapters.sources import ClaudeCodeSource, CodexSource, DshSource
 from contextbridge.adapters.targets import MarkdownTarget
 from contextbridge.cli import run
 from contextbridge.context_pack import build_context_pack, estimate_tokens
@@ -104,10 +105,26 @@ class ContextBridgeTests(unittest.TestCase):
         fixtures = Path(__file__).parent / "fixtures"
         claude_events = ClaudeCodeSource().sync(fixtures / "claude-code.jsonl").events
         codex_events = CodexSource().sync(fixtures / "codex.jsonl").events
+        dsh_result = DshSource().sync(fixtures / "dsh.jsonl")
+        dsh_events = dsh_result.events
         self.assertEqual(len(claude_events), 2)
         self.assertNotIn("SECRET_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in claude_events))
         self.assertEqual(len(codex_events), 2)
         self.assertNotIn("PRIVATE_REASONING_SHOULD_NOT_BE_IMPORTED", " ".join(e.content for e in codex_events))
+        self.assertEqual(len(dsh_events), 2)
+        self.assertEqual(dsh_events[0].source.session_id, "dsh-session")
+        self.assertEqual(dsh_events[0].source.message_id, "0")
+        self.assertEqual(dsh_events[0].occurred_at.isoformat(), "2026-09-12T09:00:01+00:00")
+        self.assertNotIn(
+            "PRIVATE_REASONING_SHOULD_NOT_BE_IMPORTED",
+            " ".join(event.content for event in dsh_events),
+        )
+        self.assertNotIn(
+            "SECRET_SHOULD_NOT_BE_IMPORTED", " ".join(event.content for event in dsh_events)
+        )
+        self.assertNotIn(
+            "REPLACEMENT_SHOULD_NOT_BE_IMPORTED", " ".join(event.content for event in dsh_events)
+        )
 
     def test_llm_extractor_validates_sources_paths_and_redacts_prompt(self) -> None:
         event = ClaudeCodeSource().sync(Path(__file__).parent / "fixtures" / "claude-code.jsonl").events[0]
@@ -165,6 +182,54 @@ class ContextBridgeTests(unittest.TestCase):
                 discover_sessions("codex", project, root=sessions, limit=1),
                 [newest],
             )
+
+    def test_discovers_uncompressed_dsh_session_for_project(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            project = root / "project"
+            session_directory = root / "sessions" / "dsh-session"
+            project.mkdir()
+            session_directory.mkdir(parents=True)
+            session = session_directory / "session.v3.jsonl"
+            session.write_text(
+                json.dumps({"type": "session", "version": 3, "id": "dsh-session", "cwd": str(project)}),
+                encoding="utf-8",
+            )
+            self.assertEqual(discover_sessions("dsh", project, root=root / "sessions"), [session])
+
+    @unittest.skipUnless(importlib.util.find_spec("zstandard"), "zstandard extra not installed")
+    def test_reads_dsh_concatenated_zstd_session(self) -> None:
+        import zstandard
+
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory) / "session.v3.jsonl.zstd"
+            records = [
+                {"type": "session", "version": 3, "id": "compressed-session"},
+                {
+                    "type": "user/message",
+                    "seq": 4,
+                    "time": 1789203601000,
+                    "data": {"content": "TODO: Resume the task"},
+                },
+            ]
+            compressor = zstandard.ZstdCompressor()
+            payload = b"".join(
+                compressor.compress((json.dumps(record) + "\n").encode()) for record in records
+            )
+            session.write_bytes(payload)
+            events = DshSource().sync(session).events
+            self.assertEqual([event.content for event in events], ["TODO: Resume the task"])
+            self.assertEqual(events[0].source.session_id, "compressed-session")
+
+    def test_rejects_non_current_dsh_session_format(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory) / "session.v2.jsonl"
+            session.write_text(
+                json.dumps({"type": "session", "version": 2, "id": "old-session"}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "expected v3"):
+                DshSource().sync(session)
 
     def test_markdown_handoff_includes_repository_state_and_instructions(self) -> None:
         state = ProjectState(

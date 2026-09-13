@@ -27,10 +27,13 @@ The adapter follows DSH's public plugin shape: synchronous `apply(ctx)`, an expl
 service dependency, `ctx.tools.register()`, `defineTool()` argument validation, and cancellation via
 the tool execution signal.
 
-## Current scope
+## Source and target roles
 
-This is a DSH target adapter: DSH can consume memories previously synchronized from Claude Code or
-Codex. Importing DSH's own session events back into ContextBridge is a separate future source plugin.
+This JavaScript package is the target adapter: DSH can consume memories synchronized from any
+supported agent. The Python package also includes the matching DSH source adapter, so later Claude
+Code, Codex, or DSH sessions can resume work that started in DSH. Configure
+`CONTEXTBRIDGE_DSH_SESSION_ROOT` for discovery, or pass `--source dsh --path ...` explicitly. DSH's
+default `.jsonl.zstd` persistence requires `pip install 'contextbridge[dsh]'`.
 
 ## Verification status
 
