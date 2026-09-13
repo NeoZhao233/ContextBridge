@@ -23,6 +23,7 @@ from .experiment import (
     score_experiment,
     write_json,
 )
+from .fixture import create_experiment_fixture
 from .git_state import current_commit, project_state, stale_memory_ids
 from .llm import OpenAICompatibleClient
 from .skill_install import install_agent_skills
@@ -75,6 +76,12 @@ def parser() -> argparse.ArgumentParser:
     experiment_plan.add_argument("--manifest", required=True, type=Path)
     experiment_plan.add_argument("--output", required=True, type=Path)
     experiment_plan.add_argument("--seed", type=int, default=42)
+
+    experiment_fixture = commands.add_parser(
+        "experiment-fixture", help="Create a reproducible three-task experiment repository"
+    )
+    experiment_fixture.add_argument("--output", required=True, type=Path)
+    experiment_fixture.add_argument("--manifest-output", type=Path)
 
     experiment_report = commands.add_parser(
         "experiment-report", help="Validate and aggregate cross-agent experiment results"
@@ -171,6 +178,17 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
         plan = create_plan(load_manifest(options.manifest), options.seed)
         write_json(options.output.resolve(), plan)
         print(f"Wrote {len(plan.assignments)} experiment runs to {options.output.resolve()}")
+        return 0
+    if options.command == "experiment-fixture":
+        try:
+            repository, manifest, commit = create_experiment_fixture(
+                options.output, options.manifest_output
+            )
+        except (FileExistsError, RuntimeError) as error:
+            raise SystemExit(str(error)) from error
+        print(f"Created fixture repository at {repository}")
+        print(f"Pinned fixture commit: {commit}")
+        print(f"Wrote experiment manifest to {manifest}")
         return 0
     if options.command == "experiment-report":
         report = score_experiment(load_plan(options.plan), load_runs(options.results))

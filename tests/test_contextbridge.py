@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -31,6 +33,7 @@ from contextbridge.experiment import (
     render_run_card,
     score_experiment,
 )
+from contextbridge.fixture import create_experiment_fixture
 from contextbridge.git_state import current_commit
 from contextbridge.models import (
     ContextEvent,
@@ -574,6 +577,65 @@ class ContextBridgeTests(unittest.TestCase):
         second = next_experiment_run(plan, [completed])
         assert second is not None
         self.assertEqual(second.order, 2)
+
+    def test_experiment_fixture_is_pinned_clean_and_starts_with_failing_tasks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "resume-fixture"
+            repository, manifest_path, commit = create_experiment_fixture(output)
+            manifest = ExperimentManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            plan = create_plan(manifest)
+
+            self.assertEqual(repository, output.resolve())
+            self.assertRegex(commit, r"^[0-9a-f]{40}$")
+            self.assertTrue(preflight_experiment(plan).valid)
+            self.assertEqual({task.base_commit for task in manifest.tasks}, {commit})
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", str(repository), "status", "--porcelain"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout,
+                "",
+            )
+            for task in manifest.tasks:
+                test_path = task.test_command.split()[3]
+                result = subprocess.run(
+                    [sys.executable, "-m", "unittest", test_path],
+                    cwd=repository,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0, task.id)
+                self.assertIn("FAILED (", result.stderr, task.id)
+                self.assertNotIn("ModuleNotFoundError", result.stderr, task.id)
+
+            with self.assertRaises(FileExistsError):
+                create_experiment_fixture(output)
+
+    def test_experiment_fixture_cli_supports_explicit_manifest_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "fixture"
+            manifest = root / "manifest.json"
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                result = run(
+                    [
+                        "experiment-fixture",
+                        "--output",
+                        str(output),
+                        "--manifest-output",
+                        str(manifest),
+                    ]
+                )
+            self.assertEqual(result, 0)
+            self.assertTrue((output / ".git").is_dir())
+            self.assertTrue(manifest.is_file())
+            self.assertIn("Pinned fixture commit", stdout.getvalue())
 
 
 if __name__ == "__main__":

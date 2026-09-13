@@ -1,0 +1,32 @@
+{
+  "name": "contextbridge-resume-study",
+  "tasks": [
+    {
+      "id": "auth-refresh",
+      "title": "Resume refresh-token replay protection",
+      "repository": "__REPOSITORY__",
+      "base_commit": "__BASE_COMMIT__",
+      "stage_a_prompt": "Inspect refresh-token rotation, choose and document a replay policy, implement the first part of the change, and stop before completing family-revocation behavior.",
+      "stage_b_prompt": "Finish refresh-token replay protection while preserving the earlier policy, then make the targeted tests pass.",
+      "test_command": "python -m unittest tests/test_refresh_tokens.py -v"
+    },
+    {
+      "id": "cache-race",
+      "title": "Resume cache invalidation ordering fix",
+      "repository": "__REPOSITORY__",
+      "base_commit": "__BASE_COMMIT__",
+      "stage_a_prompt": "Diagnose the profile-cache invalidation ordering bug, choose the correct commit boundary, begin the implementation, and stop before covering the failed-commit path.",
+      "stage_b_prompt": "Finish the profile-cache invalidation fix for success and failure paths, then make the targeted tests pass.",
+      "test_command": "python -m unittest tests/test_profile_cache.py -v"
+    },
+    {
+      "id": "cli-precedence",
+      "title": "Resume configuration precedence behavior",
+      "repository": "__REPOSITORY__",
+      "base_commit": "__BASE_COMMIT__",
+      "stage_a_prompt": "Inspect configuration loading, decide the file/environment/CLI precedence order, implement environment merging, and stop before completing CLI override handling.",
+      "stage_b_prompt": "Finish configuration precedence and malformed-file behavior, then make the targeted tests pass.",
+      "test_command": "python -m unittest tests/test_config.py -v"
+    }
+  ]
+}

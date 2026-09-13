@@ -26,6 +26,10 @@ contextbridge = [
     "benchmarks/*.json",
     "bundled_skills/*/SKILL.md",
     "bundled_skills/*/agents/openai.yaml",
+    "experiment_fixture/*.json",
+    "experiment_fixture/*.toml",
+    "experiment_fixture/resume_fixture/*.py",
+    "experiment_fixture/tests/*.py",
 ]
 
 [tool.pytest.ini_options]

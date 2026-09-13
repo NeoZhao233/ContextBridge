@@ -223,8 +223,11 @@ definitions, current offline results, limitations, and the end-to-end design.
 The repository also includes executable experiment bookkeeping:
 
 ```bash
+contextbridge experiment-fixture \
+  --output /tmp/contextbridge-resume-fixture
+
 contextbridge experiment-plan \
-  --manifest experiments/tasks.example.json \
+  --manifest /tmp/contextbridge-resume-fixture.tasks.json \
   --output experiments/plan.json
 
 contextbridge experiment-preflight --plan experiments/plan.json
@@ -238,7 +241,9 @@ contextbridge experiment-report \
   --results experiments/results.jsonl
 ```
 
-Plans assign every task to all four conditions in seeded random order. Preflight checks repositories
+The fixture command creates a standalone Git repository with three deliberately incomplete Python
+behaviors and a manifest pinned to its exact initial commit. It does not invoke an agent or consume
+model quota. Plans assign every task to all four conditions in seeded random order. Preflight checks repositories
 and pinned commits before agent quota is spent. Run cards select the next missing assignment and
 spell out exactly what context that condition permits. Reports reject duplicate or unknown run IDs
 and leave incomplete runs visible rather than silently dropping them.

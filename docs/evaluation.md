@@ -65,13 +65,26 @@ appropriate for claims about cross-agent task completion.
 
 ### Prepare a run plan
 
-Copy `experiments/tasks.example.json`, replace its repository and commit placeholders, and add or
-remove tasks to match the desired budget. The minimal example has three tasks and therefore produces
-twelve runs; five tasks produce twenty runs.
+For the reproducible built-in study, first create the deliberately incomplete fixture repository:
+
+```bash
+contextbridge experiment-fixture \
+  --output /tmp/contextbridge-resume-fixture
+```
+
+This writes the repository and `/tmp/contextbridge-resume-fixture.tasks.json`. The fixture contains
+three independent Python tasks covering refresh-token replay, cache invalidation ordering, and
+configuration precedence. Each targeted test fails at the baseline by design. The generated manifest
+pins all tasks to the exact initial commit and lives outside the repository, leaving its checkout
+clean. Creating it is local-only and consumes no agent quota.
+
+Alternatively, copy `experiments/tasks.example.json`, replace its repository and commit placeholders,
+and add or remove tasks to match the desired budget. Three tasks produce twelve runs; five tasks
+produce twenty runs.
 
 ```bash
 contextbridge experiment-plan \
-  --manifest experiments/tasks.json \
+  --manifest /tmp/contextbridge-resume-fixture.tasks.json \
   --seed 42 \
   --output experiments/plan.json
 
