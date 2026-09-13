@@ -28,6 +28,7 @@ from contextbridge.experiment import (
     create_plan,
     next_experiment_run,
     preflight_experiment,
+    prepare_experiment_run,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -636,6 +637,43 @@ class ContextBridgeTests(unittest.TestCase):
             self.assertTrue((output / ".git").is_dir())
             self.assertTrue(manifest.is_file())
             self.assertIn("Pinned fixture commit", stdout.getvalue())
+
+    def test_experiment_prepare_creates_clean_detached_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository, manifest_path, commit = create_experiment_fixture(root / "fixture")
+            plan = create_plan(
+                ExperimentManifest.model_validate_json(manifest_path.read_text(encoding="utf-8")),
+                seed=11,
+            )
+            prepared = prepare_experiment_run(plan, [], root / "runs")
+            assert prepared is not None
+            card, worktree = prepared
+
+            self.assertEqual(Path(card.repository), worktree)
+            self.assertTrue(worktree.is_dir())
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip(),
+                commit,
+            )
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", str(worktree), "status", "--porcelain"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout,
+                "",
+            )
+            with self.assertRaises(FileExistsError):
+                prepare_experiment_run(plan, [], root / "runs")
+            with self.assertRaisesRegex(ValueError, "outside"):
+                prepare_experiment_run(plan, [], repository / "runs")
 
 
 if __name__ == "__main__":

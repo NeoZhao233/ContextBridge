@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import subprocess
 from datetime import datetime
 from enum import StrEnum
+from hashlib import sha256
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -240,6 +242,62 @@ def next_experiment_run(
         test_command=task.test_command,
         condition_payload=CONDITION_PAYLOADS[assignment.condition],
     )
+
+
+def prepare_experiment_run(
+    plan: ExperimentPlan,
+    runs: list[ExperimentRun],
+    worktree_root: Path,
+) -> tuple[ExperimentRunCard, Path] | None:
+    preflight = preflight_experiment(plan)
+    if not preflight.valid:
+        errors = [
+            f"{task.task_id}: {error}"
+            for task in preflight.tasks
+            for error in task.errors
+        ]
+        raise ValueError(f"Experiment preflight failed: {'; '.join(errors)}")
+
+    card = next_experiment_run(plan, runs)
+    if card is None:
+        return None
+
+    repository = Path(card.repository).expanduser().resolve()
+    root = worktree_root.expanduser().resolve()
+    try:
+        root.relative_to(repository)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Worktree root must be outside the fixture repository")
+
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", card.run_id).strip("-.") or "run"
+    digest = sha256(card.run_id.encode()).hexdigest()[:8]
+    destination = root / f"{card.order:02d}-{slug[:48]}-{digest}"
+    if destination.exists():
+        raise FileExistsError(f"Experiment worktree already exists: {destination}")
+    root.mkdir(parents=True, exist_ok=True)
+
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "worktree",
+            "add",
+            "--detach",
+            str(destination),
+            card.base_commit,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown git error"
+        raise RuntimeError(f"Could not prepare experiment worktree: {detail}")
+    prepared_card = card.model_copy(update={"repository": str(destination)})
+    return prepared_card, destination
 
 
 def render_run_card(card: ExperimentRunCard) -> str:

@@ -98,17 +98,25 @@ also rejects branch names, `HEAD`, and abbreviated hashes: the manifest must con
 ID reported by Git so later runs cannot silently move to a different baseline. Do not spend agent
 quota until preflight passes.
 
-Use the plan order instead of choosing conditions manually:
+Use the plan order instead of choosing conditions manually. Prepare each run in its own worktree:
 
 ```bash
-contextbridge experiment-next \
+contextbridge experiment-prepare \
   --plan experiments/plan.json \
-  --results experiments/results.jsonl
+  --results experiments/results.jsonl \
+  --worktree-root /tmp/contextbridge-runs
 ```
 
-The command skips recorded run IDs and prints a run card with the exact Agent A prompt, condition
-payload, Agent B prompt, repository, commit, and test command. Omit `--results` before the first run.
-When every assignment is recorded, it reports completion instead of silently cycling back.
+The command runs preflight, skips recorded run IDs, creates a clean detached Git worktree at the
+pinned commit, and prints a run card with the exact Agent A prompt, condition payload, Agent B prompt,
+working directory, commit, and test command. It refuses to overwrite an existing run directory or
+place the worktree root inside the fixture repository. Omit `--results` before the first run. When
+every assignment is recorded, it reports completion instead of silently cycling back. Use
+`experiment-next` instead when only a read-only preview of the next card is needed.
+
+Preserve the run trace and diff before removing a completed worktree. Then use ordinary
+`git worktree remove <run-directory>` from the fixture repository; avoid `--force`, which can discard
+an uncommitted agent result.
 
 For each assignment, let Agent A execute `stage_a_prompt`, then start a fresh Agent B session with
 `stage_b_prompt` and exactly one condition payload:

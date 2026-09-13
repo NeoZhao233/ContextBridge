@@ -17,6 +17,7 @@ from .experiment import (
     load_runs,
     next_experiment_run,
     preflight_experiment,
+    prepare_experiment_run,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -103,6 +104,14 @@ def parser() -> argparse.ArgumentParser:
     experiment_next.add_argument("--plan", required=True, type=Path)
     experiment_next.add_argument("--results", type=Path)
     experiment_next.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    experiment_prepare = commands.add_parser(
+        "experiment-prepare", help="Create a clean worktree for the next experiment run"
+    )
+    experiment_prepare.add_argument("--plan", required=True, type=Path)
+    experiment_prepare.add_argument("--results", type=Path)
+    experiment_prepare.add_argument("--worktree-root", required=True, type=Path)
+    experiment_prepare.add_argument("--format", choices=["markdown", "json"], default="markdown")
 
     commands.add_parser("status", help="Show store and plugin status")
     validate = commands.add_parser("validate", help="Validate a generated Context Pack")
@@ -225,6 +234,26 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
             if options.format == "json"
             else render_run_card(card)
         )
+        print(rendered)
+        return 0
+    if options.command == "experiment-prepare":
+        runs = load_runs(options.results) if options.results else []
+        try:
+            prepared = prepare_experiment_run(
+                load_plan(options.plan), runs, options.worktree_root
+            )
+        except (FileExistsError, RuntimeError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        if prepared is None:
+            print("All planned experiment runs are complete.")
+            return 0
+        card, worktree = prepared
+        rendered = (
+            json.dumps(card.model_dump(mode="json"), indent=2)
+            if options.format == "json"
+            else render_run_card(card)
+        )
+        print(f"Prepared clean worktree at {worktree}")
         print(rendered)
         return 0
     if options.command == "validate":
