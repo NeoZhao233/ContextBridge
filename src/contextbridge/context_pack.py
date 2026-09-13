@@ -55,6 +55,8 @@ def build_context_pack(
     ranked = sorted(memories, key=score, reverse=True)
     selected: list[Memory] = []
     render_overhead = min(300, max(100, token_budget // 10))
+    if excerpts:
+        render_overhead += 20
     if project_state is not None:
         repository_text = " ".join(
             [

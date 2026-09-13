@@ -55,8 +55,11 @@ class MarkdownTarget:
             output.extend(["## Relevant conversation excerpts", ""])
             for event in pack.excerpts:
                 role = event.type.removeprefix("message.")
+                output.append(f"### {event.source.agent} · {role}")
+                output.append("")
                 output.append(
-                    f"### {event.source.agent} · {role} · message {event.source.message_id}"
+                    f"Source: {event.source.agent} / {event.source.session_id} / "
+                    f"message {event.source.message_id}"
                 )
                 output.append("")
                 output.extend(f"> {line}" if line else ">" for line in event.content.splitlines())

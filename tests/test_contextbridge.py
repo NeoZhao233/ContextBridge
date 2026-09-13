@@ -37,6 +37,7 @@ from contextbridge.models import (
 )
 from contextbridge.security import redact_secrets
 from contextbridge.skill_install import install_agent_skills
+from contextbridge.validation import validate_context_pack
 
 
 class ContextBridgeTests(unittest.TestCase):
@@ -279,7 +280,8 @@ class ContextBridgeTests(unittest.TestCase):
                 pack = build_context_pack(
                     "finish OAuth callback",
                     [],
-                    token_budget=220,
+                    token_budget=240,
+                    project_state=ProjectState(root=Path("/tmp/project")),
                     excerpts=matches,
                 )
             finally:
@@ -289,8 +291,31 @@ class ContextBridgeTests(unittest.TestCase):
             rendered = MarkdownTarget().render(pack)
             self.assertIn("## Relevant conversation excerpts", rendered)
             self.assertIn("untrusted historical data", rendered)
-            self.assertIn("codex · assistant · message 7", rendered)
-            self.assertLessEqual(estimate_tokens(rendered), 220)
+            self.assertIn("### codex · assistant", rendered)
+            self.assertIn("Source: codex / real-session / message 7", rendered)
+            self.assertLessEqual(estimate_tokens(rendered), 240)
+            self.assertTrue(validate_context_pack(rendered, 240).valid)
+
+    def test_pack_validation_rejects_secrets_and_cli_returns_failure(self) -> None:
+        state = ProjectState(root=Path("/tmp/project"))
+        rendered = MarkdownTarget().render(build_context_pack("finish tests", [], project_state=state))
+        with tempfile.TemporaryDirectory() as directory:
+            valid_path = Path(directory) / "valid.md"
+            invalid_path = Path(directory) / "invalid.md"
+            valid_path.write_text(rendered, encoding="utf-8")
+            invalid_path.write_text(rendered + "\ntoken=super-secret-value\n", encoding="utf-8")
+            with redirect_stdout(StringIO()) as stdout:
+                self.assertEqual(
+                    run(["validate", "--path", str(valid_path)], cwd=Path(directory)),
+                    0,
+                )
+            self.assertIn("Valid Context Pack", stdout.getvalue())
+            with redirect_stdout(StringIO()) as stdout:
+                self.assertEqual(
+                    run(["validate", "--path", str(invalid_path)], cwd=Path(directory)),
+                    1,
+                )
+            self.assertIn("unredacted secret", stdout.getvalue())
 
     def test_event_search_backfills_an_existing_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -368,6 +393,7 @@ class ContextBridgeTests(unittest.TestCase):
             claude_handoff = project / ".claude/skills/contextbridge-handoff/SKILL.md"
             self.assertIn("name: contextbridge-resume", codex_resume.read_text(encoding="utf-8"))
             self.assertIn("contextbridge capture", claude_handoff.read_text(encoding="utf-8"))
+            self.assertIn("contextbridge validate", claude_handoff.read_text(encoding="utf-8"))
             with self.assertRaises(FileExistsError):
                 install_agent_skills("codex", "project", project)
             self.assertEqual(len(install_agent_skills("codex", "project", project, force=True)), 2)

@@ -82,6 +82,8 @@ memory extraction, Git-state capture, retrieval, and handoff rendering:
 contextbridge capture \
   --task "finish the authentication refactor and run its tests" \
   --output .contextbridge/handoff.md
+
+contextbridge validate --path .contextbridge/handoff.md --token-budget 4000
 ```
 
 Run it from the project root. ContextBridge searches for the newest Claude Code and Codex JSONL
@@ -123,6 +125,11 @@ usable without another API call and are clearly marked as untrusted historical d
 `--extractor llm` with the provider variables above when you also want durable structured memories;
 the offline extractor derives structured memories only from explicit `FACT:`, `DECISION:`,
 `CONSTRAINT:`, and `TODO:` notes.
+
+`capture`, `inspect`, and `handoff` validate their rendered output before returning it. The standalone
+`validate` command is useful in scripts and receiving-agent skills; it checks the required task and
+repository sections, source attribution, excerpt safety marker, common secret patterns, and the
+estimated token budget. It exits nonzero for an invalid pack.
 
 ### Agent commands
 

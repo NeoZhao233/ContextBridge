@@ -63,6 +63,9 @@ or decisions.
 
 Selection uses FTS candidates, type/recency relevance, and a conservative Latin/CJK token estimate
 to remain inside a caller-provided budget without binding the core to one tokenizer or model vendor.
+The Markdown target is validated before delivery for required sections, attribution, unredacted
+secret patterns, excerpt trust marking, and final rendered size. The same validator is exposed as a
+CLI command so handoff and resume skills can fail closed on a malformed pack.
 
 Memory IDs are content-addressed, making repeated imports idempotent. Each memory records the source agent, session, message, file, and Git commit when available.
 

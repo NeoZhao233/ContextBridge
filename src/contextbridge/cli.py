@@ -22,6 +22,7 @@ from .experiment import (
 from .git_state import current_commit, project_state, stale_memory_ids
 from .llm import OpenAICompatibleClient
 from .skill_install import install_agent_skills
+from .validation import render_validation, validate_context_pack
 
 
 def parser() -> argparse.ArgumentParser:
@@ -80,6 +81,10 @@ def parser() -> argparse.ArgumentParser:
     experiment_report.add_argument("--output", type=Path)
 
     commands.add_parser("status", help="Show store and plugin status")
+    validate = commands.add_parser("validate", help="Validate a generated Context Pack")
+    validate.add_argument("--path", type=Path, default=Path(".contextbridge/handoff.md"))
+    validate.add_argument("--token-budget", type=int, default=4000)
+    validate.add_argument("--format", choices=["text", "json"], default="text")
     for name in ("inspect", "handoff"):
         command = commands.add_parser(name)
         command.add_argument("--task", required=True)
@@ -165,6 +170,15 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
         else:
             print(rendered)
         return 0
+    if options.command == "validate":
+        path = options.path.resolve()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as error:
+            raise SystemExit(f"Could not read Context Pack {path}: {error}") from error
+        report = validate_context_pack(text, options.token_budget)
+        print(render_validation(report, options.format))
+        return 0 if report.valid else 1
     extra_extractor = None
     if options.command in ("sync", "capture") and options.extractor == "llm":
         extra_extractor = _llm_extractor(options)
@@ -221,6 +235,9 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
                 excerpts,
             )
             rendered = registry.target("markdown").render(pack)
+            validation = validate_context_pack(rendered, options.token_budget)
+            if not validation.valid:
+                raise SystemExit(render_validation(validation))
             if options.output:
                 output = options.output.resolve()
                 output.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +264,9 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
                 excerpts,
             )
             rendered = registry.target("markdown").render(pack)
+            validation = validate_context_pack(rendered, options.token_budget)
+            if not validation.valid:
+                raise SystemExit(render_validation(validation))
             if options.command == "handoff" and options.output:
                 output = options.output.resolve()
                 output.write_text(rendered, encoding="utf-8")

@@ -12,8 +12,9 @@ Work from the repository root.
 2. Run `contextbridge capture --task <task> --output .contextbridge/handoff.md`. Pass the task as one
    safely quoted argument. If `CONTEXTBRIDGE_API_KEY`, `CONTEXTBRIDGE_MODEL`, and
    `CONTEXTBRIDGE_BASE_URL` are configured, add `--extractor llm`; never print their values.
-3. Read the generated pack. Check that it contains the current task and repository state and does not
-   expose a secret. Correct the task and regenerate when it is misleading.
+3. Run `contextbridge validate --path .contextbridge/handoff.md` and stop if it reports an error.
+   Then read the generated pack and confirm that the task accurately describes the unfinished work.
+   Correct the task and regenerate when it is misleading.
 4. Tell the user where the pack was written and that the receiving agent can invoke
    `contextbridge-resume` from the same repository.
 
