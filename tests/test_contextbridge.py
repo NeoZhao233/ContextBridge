@@ -410,10 +410,12 @@ class ContextBridgeTests(unittest.TestCase):
             )
             self.assertFalse((cli_project / ".contextbridge").exists())
 
-    def test_offline_evaluation_compares_four_strategies(self) -> None:
+    def test_offline_evaluation_compares_five_strategies(self) -> None:
         cases = load_cases()
         report = evaluate_cases(cases)
         results = {result.strategy: result for result in report.results}
+        self.assertEqual(report.dataset, "resume_retrieval_v2")
+        self.assertEqual(len(results), 5)
         self.assertEqual(report.cases, 10)
         self.assertEqual(results["no_context"].recall, 0.0)
         self.assertEqual(results["raw_history"].recall, 1.0)
@@ -422,6 +424,10 @@ class ContextBridgeTests(unittest.TestCase):
             results["contextbridge"].recall,
             results["one_shot_summary"].recall,
         )
+        self.assertEqual(results["offline_excerpts"].recall, 1.0)
+        self.assertEqual(results["offline_excerpts"].precision, 0.75)
+        self.assertEqual(results["offline_excerpts"].source_coverage, 1.0)
+        self.assertLess(results["offline_excerpts"].tokens, results["raw_history"].tokens)
         self.assertLess(results["contextbridge"].tokens, results["raw_history"].tokens)
         self.assertEqual(
             {name: result.tokens for name, result in results.items()},
@@ -430,6 +436,7 @@ class ContextBridgeTests(unittest.TestCase):
                 "raw_history": 6228,
                 "one_shot_summary": 522,
                 "contextbridge": 2086,
+                "offline_excerpts": 4879,
             },
         )
         self.assertIn("not coding-task completion", render_report(report))

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .adapters.targets import MarkdownTarget
 from .context_pack import build_context_pack, estimate_tokens
-from .models import Memory, MemoryType, SourceRef
+from .models import ContextEvent, Memory, MemoryType, SourceRef
 
 
 class EvaluationItem(BaseModel):
@@ -57,13 +58,12 @@ def load_cases(path: Path | None = None) -> list[EvaluationCase]:
 
 def _score(
     strategy: str,
-    selected: list[EvaluationItem],
+    selected_ids: set[str],
     relevant_ids: set[str],
     rendered: str,
     *,
     has_sources: bool,
 ) -> StrategyResult:
-    selected_ids = {item.id for item in selected}
     relevant_selected = selected_ids & relevant_ids
     recall = len(relevant_selected) / len(relevant_ids) if relevant_ids else 1.0
     precision = len(relevant_selected) / len(selected_ids) if selected_ids else 0.0
@@ -90,6 +90,51 @@ def _render_synthetic_history(items: list[EvaluationItem]) -> str:
             "and repeated navigation that is not needed by the receiving agent."
         )
     return "\n\n".join(messages)
+
+
+def _synthetic_events(case: EvaluationCase) -> list[ContextEvent]:
+    events: list[ContextEvent] = []
+    base_time = datetime(2026, 1, 1, tzinfo=UTC)
+    for index, item in enumerate(case.items, start=1):
+        user_id = f"prompt-{item.id}"
+        events.append(
+            ContextEvent(
+                id=user_id,
+                type="message.user",
+                occurred_at=base_time + timedelta(seconds=index * 2 - 1),
+                source=SourceRef(
+                    agent="fixture-agent",
+                    session_id=case.id,
+                    message_id=str(index * 2 - 1),
+                    path=Path(f"{case.id}.jsonl"),
+                ),
+                content=(
+                    "Investigate this part of the project and compare the available "
+                    "implementation options before making changes."
+                ),
+            )
+        )
+        events.append(
+            ContextEvent(
+                id=item.id,
+                type="message.assistant",
+                occurred_at=base_time + timedelta(seconds=index * 2),
+                source=SourceRef(
+                    agent="fixture-agent",
+                    session_id=case.id,
+                    message_id=str(index * 2),
+                    path=Path(f"{case.id}.jsonl"),
+                ),
+                content=(
+                    "I inspected the relevant code, followed intermediate call paths, and ran "
+                    "diagnostic commands. The durable outcome from that exploration was: "
+                    f"{item.content} The conversation also contained temporary hypotheses, "
+                    "command output, and repeated navigation that is not needed by the receiving "
+                    "agent."
+                ),
+            )
+        )
+    return events
 
 
 def evaluate_cases(cases: list[EvaluationCase]) -> EvaluationReport:
@@ -119,23 +164,39 @@ def evaluate_cases(cases: list[EvaluationCase]) -> EvaluationReport:
             limit=len(relevant_ids),
             token_budget=case.token_budget,
         )
-        bridge_items = [by_id[memory.id] for memory in pack.memories]
+        fallback_pack = build_context_pack(
+            case.task,
+            [],
+            token_budget=case.token_budget,
+            excerpts=_synthetic_events(case),
+        )
+        bridge_ids = {memory.id for memory in pack.memories}
+        fallback_ids = {event.id for event in fallback_pack.excerpts}
         summary_items = [by_id[item_id] for item_id in case.summary_ids]
         contexts = {
-            "no_context": ([], "", False),
-            "raw_history": (case.items, _render_synthetic_history(case.items), True),
+            "no_context": (set(), "", False),
+            "raw_history": (
+                {item.id for item in case.items},
+                _render_synthetic_history(case.items),
+                True,
+            ),
             "one_shot_summary": (
-                summary_items,
+                {item.id for item in summary_items},
                 "\n".join(item.content for item in summary_items),
                 False,
             ),
-            "contextbridge": (bridge_items, MarkdownTarget().render(pack), True),
+            "contextbridge": (bridge_ids, MarkdownTarget().render(pack), True),
+            "offline_excerpts": (
+                fallback_ids,
+                MarkdownTarget().render(fallback_pack),
+                True,
+            ),
         }
-        for strategy, (selected, rendered, has_sources) in contexts.items():
+        for strategy, (selected_ids, rendered, has_sources) in contexts.items():
             totals[strategy].append(
                 _score(
                     strategy,
-                    selected,
+                    selected_ids,
                     relevant_ids,
                     rendered,
                     has_sources=has_sources,
@@ -143,7 +204,13 @@ def evaluate_cases(cases: list[EvaluationCase]) -> EvaluationReport:
             )
 
     results = []
-    for strategy in ("no_context", "raw_history", "one_shot_summary", "contextbridge"):
+    for strategy in (
+        "no_context",
+        "raw_history",
+        "one_shot_summary",
+        "contextbridge",
+        "offline_excerpts",
+    ):
         rows = totals[strategy]
         count = len(rows) or 1
         results.append(
@@ -155,7 +222,7 @@ def evaluate_cases(cases: list[EvaluationCase]) -> EvaluationReport:
                 tokens=sum(row.tokens for row in rows),
             )
         )
-    return EvaluationReport(dataset="resume_retrieval_v1", cases=len(cases), results=results)
+    return EvaluationReport(dataset="resume_retrieval_v2", cases=len(cases), results=results)
 
 
 def render_report(report: EvaluationReport) -> str:

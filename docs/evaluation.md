@@ -13,7 +13,7 @@ contextbridge evaluate
 contextbridge evaluate --format json --output evaluation.json
 ```
 
-Each synthetic case contains three required project memories and two unrelated memories. The four
+Each synthetic case contains three required project outcomes and two unrelated outcomes. The five
 strategies receive the same underlying facts:
 
 - `no_context` receives nothing.
@@ -23,6 +23,9 @@ strategies receive the same underlying facts:
 - `contextbridge` ranks all candidate memories for the task and selects three under a 500-token
   memory budget. Its measured payload is the rendered Context Pack, including instructions and
   provenance.
+- `offline_excerpts` starts with zero structured memories. It ranks synthetic user/assistant events
+  with event FTS and fills the same 500-token budget with attributed raw excerpts, exercising the
+  no-API fallback used when the original agent cannot summarize its session.
 
 Metrics are macro-averaged across cases. Required recall is the fraction of required memory IDs
 selected. Precision is the relevant fraction of selected IDs. Source coverage is the fraction of
@@ -37,9 +40,16 @@ Current expected output:
 | raw_history | 100.0% | 60.0% | 100.0% | 6228 |
 | one_shot_summary | 66.7% | 66.7% | 0.0% | 522 |
 | contextbridge | 100.0% | 100.0% | 100.0% | 2086 |
+| offline_excerpts | 100.0% | 75.0% | 100.0% | 4879 |
 
-This benchmark verifies ranking, budgeting, provenance retention, packaging, and CLI output. Because
-the cases and summary baseline are controlled fixtures, it does not establish real-world superiority.
+The offline-excerpt path retains every required outcome while using 21.7% fewer tokens than the full
+synthetic history, but it is less precise and substantially larger than structured ContextBridge
+memory. This is the intended emergency fallback tradeoff, not evidence that extraction is
+unnecessary.
+
+This benchmark verifies ranking, budgeting, provenance retention, packaging, and CLI output.
+Because the cases and summary baseline are controlled fixtures, it does not establish real-world
+superiority.
 
 ## End-to-end study
 

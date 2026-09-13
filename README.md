@@ -210,9 +210,10 @@ Run the deterministic offline benchmark:
 contextbridge evaluate
 ```
 
-It compares no context, verbose synthetic history, a controlled one-shot-summary baseline, and
-ContextBridge across ten cases. It reports required-memory recall, precision, source coverage, and
-estimated input tokens. This is a retrieval regression suite, not a coding-task success claim.
+It compares no context, verbose synthetic history, a controlled one-shot-summary baseline,
+structured ContextBridge memory, and the zero-API offline-excerpt fallback across ten cases. It
+reports required-memory recall, precision, source coverage, and estimated input tokens. This is a
+retrieval regression suite, not a coding-task success claim.
 
 The second evaluation layer starts with three real two-stage coding tasks under all four conditions,
 for twelve runs measuring test pass rate, input tokens, time, and repeated exploration. Five tasks
