@@ -325,19 +325,32 @@ def load_codex_trace_usage(path: Path) -> CodexTraceUsage:
             raise ValueError(f"Invalid Codex trace JSON at line {line_number}: {error}") from error
         if not isinstance(event, dict):
             raise TypeError(f"Invalid Codex trace event at line {line_number}: expected object")
-        if event.get("type") != "turn.completed" or not isinstance(event.get("usage"), dict):
+        is_codex_completion = event.get("type") == "turn.completed"
+        is_claude_result = event.get("type") == "result"
+        if not (is_codex_completion or is_claude_result) or not isinstance(
+            event.get("usage"), dict
+        ):
             continue
         candidate = event["usage"]
         try:
+            raw_input_tokens = candidate.get("input_tokens")
+            cached_input_tokens = candidate.get(
+                "cached_input_tokens", candidate.get("cache_read_input_tokens", 0)
+            )
+            output_tokens = candidate.get("output_tokens")
+            if raw_input_tokens is None or output_tokens is None:
+                raise KeyError("input_tokens/output_tokens")
+            if is_claude_result:
+                raw_input_tokens += cached_input_tokens
             usage = CodexTraceUsage(
-                raw_input_tokens=candidate["input_tokens"],
-                cached_input_tokens=candidate.get("cached_input_tokens", 0),
-                output_tokens=candidate["output_tokens"],
+                raw_input_tokens=raw_input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                output_tokens=output_tokens,
             )
         except (KeyError, ValueError) as error:
-            raise ValueError(f"Invalid Codex usage at line {line_number}: {error}") from error
+            raise ValueError(f"Invalid agent usage at line {line_number}: {error}") from error
     if usage is None:
-        raise ValueError("Codex trace contains no turn.completed usage event")
+        raise ValueError("Agent trace contains no completed usage event")
     return usage
 
 

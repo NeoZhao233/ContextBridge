@@ -964,6 +964,20 @@ class ContextBridgeTests(unittest.TestCase):
                 '"decision_checks_passed":0,"decision_checks_total":0,"regressions":0}'
             )
 
+    def test_load_trace_usage_accepts_claude_result_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            trace = Path(directory) / "claude.jsonl"
+            trace.write_text(
+                '{"type":"assistant","message":{"usage":{"input_tokens":10,"output_tokens":2}}}\n'
+                '{"type":"result","usage":{"input_tokens":100,"cache_read_input_tokens":80,"output_tokens":7}}\n',
+                encoding="utf-8",
+            )
+            usage = load_codex_trace_usage(trace)
+            self.assertEqual(usage.raw_input_tokens, 180)
+            self.assertEqual(usage.cached_input_tokens, 80)
+            self.assertEqual(usage.output_tokens, 7)
+            self.assertEqual(usage.reported_tokens, 107)
+
 
 if __name__ == "__main__":
     unittest.main()
