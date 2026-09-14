@@ -1,0 +1,13 @@
+$ python -m unittest tests/test_profile_cache.py -v
+exit_code=0
+
+--- stdout ---
+
+--- stderr ---
+test_failed_commit_keeps_cached_value (tests.test_profile_cache.ProfileCacheTests.test_failed_commit_keeps_cached_value) ... ok
+test_success_invalidates_cache_after_commit (tests.test_profile_cache.ProfileCacheTests.test_success_invalidates_cache_after_commit) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK

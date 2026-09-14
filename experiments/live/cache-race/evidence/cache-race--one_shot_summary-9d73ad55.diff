@@ -1,0 +1,31 @@
+# git status --short
+ M resume_fixture/profile_cache.py
+?? .contextbridge/
+?? resume_fixture/__pycache__/
+?? tests/__pycache__/
+
+# git diff HEAD --binary --no-ext-diff
+diff --git a/resume_fixture/profile_cache.py b/resume_fixture/profile_cache.py
+index 0fa7110..4d2914f 100644
+--- a/resume_fixture/profile_cache.py
++++ b/resume_fixture/profile_cache.py
+@@ -30,18 +30,7 @@ class ProfileService:
+         * CommitError -> the store still holds the previous value, so the
+           cached entry is still accurate and must be left intact; re-raise.
+         """
+-        try:
+-            self.store.commit(user_id, value)
+-        except CommitError:
+-            # TODO(commit-boundary): this failure path is still WRONG. A failed
+-            # commit left the store's previous value in place, so the cached
+-            # entry is still accurate and invalidating it here discards a valid
+-            # entry and can force a refetch of a value the store never accepted.
+-            # The failure path must not touch self.cache at all -- it should
+-            # only re-raise. Left unfixed on purpose; see
+-            # tests/test_profile_cache.py::test_failed_commit_keeps_cached_value.
+-            self.cache.pop(user_id, None)
+-            raise
++        self.store.commit(user_id, value)
+ 
+         # Commit succeeded: the store now holds `value`, so any cached entry for
+         # this user is stale and must be dropped.

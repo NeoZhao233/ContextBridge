@@ -113,3 +113,30 @@ example of why handoff provenance and instruction precedence matter.
 The committed [auth-refresh artifacts](../experiments/live/auth-refresh/) contain the four Codex
 JSONL traces, condition inputs, result records, test output, final diffs, and SHA-256 hashes. The
 sample is still one run per condition and remains descriptive rather than statistically significant.
+
+## Third matched task: cache invalidation ordering
+
+The final fixture task used Stage A checkpoint
+`cd3eef8a47a71442f1205e54c6bc9aa5ebc87f1f`. Claude/DeepSeek moved cache invalidation behind the
+successful store commit, documented that boundary, and deliberately left an incorrect invalidation
+inside the `CommitError` path. The targeted suite remained 1/2. Stage A cost $0.393248.
+
+| Condition | Agent B reported tokens | Seconds | Re-exploration | Target tests |
+|---|---:|---:|---:|---:|
+| no context | 39,511 | 95.6 | 7 | 2/2 |
+| raw history | 14,630 | 67.6 | 5 | 2/2 |
+| one-shot summary | 10,861 | 45.3 | 4 | 2/2 |
+| ContextBridge | 23,221 | 1,708.1 | 4 | 2/2 |
+
+ContextBridge reduced reported tokens by 41.2% relative to no context and tied the summary for the
+fewest repeated exploration actions, but the summary was smaller and faster. The ContextBridge run
+also encountered a model stream disconnect and retry. The completed result and full 1,708-second
+wall time are retained; no selective rerun was substituted.
+
+The committed [cache-race artifacts](../experiments/live/cache-race/) preserve the handoff inputs,
+Codex traces, test evidence, diffs, and hashes. A
+[three-task descriptive summary](../experiments/live/summary.md) combines all twelve runs. Across
+those runs ContextBridge averaged 36.8% fewer reported tokens than no context and 16.7% fewer than
+raw history, while the one-shot summary remained the lowest-token condition. With only one
+observation per task and condition, this is a portfolio-scale experiment, not a statistical
+benchmark.

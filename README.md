@@ -221,12 +221,14 @@ and twenty runs are the stretch target. See [the evaluation protocol](docs/evalu
 definitions, current offline results, limitations, and the end-to-end design.
 
 [Live Claude Code → ContextBridge → Codex smoke tests and matched four-condition replays](docs/smoke-test.md)
-have passed on two fixtures. On configuration precedence, ContextBridge used 66.3% fewer Agent B
-tokens than raw history but was slower. On refresh-token replay it was fastest, while the one-shot
-summary used the fewest tokens. All conditions passed, and the mixed trade-offs are reported rather
-than collapsed into a superiority claim. The committed
-[auth-refresh evidence](experiments/live/auth-refresh/) includes traces, handoff inputs, test output,
-diffs, and hashes. These one-run-per-condition results remain diagnostic rather than statistical.
+have now completed all three fixtures: twelve Agent B runs, all with passing targeted tests. In the
+[descriptive summary](experiments/live/summary.md), ContextBridge averaged 36.8% fewer reported
+tokens than no context and 16.7% fewer than raw history, while the fixed one-shot summary remained
+the lowest-token condition. A retained network outlier also makes ContextBridge's mean latency the
+worst. The mixed trade-offs are reported rather than collapsed into a superiority claim. Committed
+[auth-refresh](experiments/live/auth-refresh/) and [cache-race](experiments/live/cache-race/)
+evidence includes traces, handoff inputs, test output, diffs, and hashes. With one run per task and
+condition, these results are portfolio-scale and descriptive rather than statistical.
 
 The repository also includes executable experiment bookkeeping:
 
