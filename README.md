@@ -245,6 +245,8 @@ contextbridge experiment-prepare \
   --checkpoints experiments/checkpoints.jsonl \
   --worktree-root /tmp/contextbridge-runs
 
+contextbridge experiment-record --help
+
 contextbridge experiment-report \
   --plan experiments/plan.json \
   --results experiments/results.jsonl
@@ -258,6 +260,8 @@ summary, and ContextBridge artifacts. Preflight checks repositories and commits 
 spent. Prepare selects the next missing assignment, creates a detached worktree at the shared
 checkpoint, injects only that condition's input, and prints the Agent B run card. Reports reject
 duplicate or unknown run IDs and leave incomplete runs visible rather than silently dropping them.
+The recorder verifies the checkpoint and condition, reruns the pinned tests, extracts Codex usage,
+and hashes the trace, test output, and code diff so reported results remain auditable.
 
 ## Non-goals
 

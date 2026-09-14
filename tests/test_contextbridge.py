@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from hashlib import sha256
 from io import StringIO
 from pathlib import Path
 
@@ -28,10 +29,13 @@ from contextbridge.experiment import (
     ExperimentTask,
     create_plan,
     load_checkpoints,
+    load_codex_trace_usage,
+    load_runs,
     next_experiment_run,
     preflight_experiment,
     prepare_experiment_run,
     record_checkpoint,
+    record_experiment_run,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -802,6 +806,93 @@ class ContextBridgeTests(unittest.TestCase):
             no_context_card, no_context_worktree = no_context
             self.assertEqual(no_context_card.condition, ExperimentCondition.NO_CONTEXT)
             self.assertFalse((no_context_worktree / ".contextbridge").exists())
+
+    def test_record_run_verifies_trace_condition_and_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, manifest_path, _ = create_experiment_fixture(root / "fixture")
+            manifest = ExperimentManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            manifest.tasks = [manifest.tasks[2]]
+            plan = create_plan(manifest, seed=1)
+            context_assignment = next(
+                item
+                for item in plan.assignments
+                if item.condition == ExperimentCondition.CONTEXTBRIDGE
+            )
+            context_assignment.order = 1
+
+            transcript = root / "raw.md"
+            summary = root / "summary.md"
+            pack = root / "pack.md"
+            transcript.write_text("raw", encoding="utf-8")
+            summary.write_text("summary", encoding="utf-8")
+            pack.write_text("pack", encoding="utf-8")
+            checkpoint = ExperimentCheckpoint(
+                task_id=manifest.tasks[0].id,
+                commit=manifest.tasks[0].base_commit,
+                agent_a="claude-code",
+                model_a="deepseek",
+                transcript_path=str(transcript),
+                summary_path=str(summary),
+                context_pack_path=str(pack),
+            )
+            prepared = prepare_experiment_run(plan, [], root / "runs", [checkpoint])
+            assert prepared is not None
+            card, worktree = prepared
+            trace = root / "trace.jsonl"
+            trace.write_text(
+                '{"type":"turn.started"}\n'
+                '{"type":"turn.completed","usage":{"input_tokens":100,'
+                '"cached_input_tokens":60,"output_tokens":5}}\n',
+                encoding="utf-8",
+            )
+            usage = load_codex_trace_usage(trace)
+            self.assertEqual(usage.reported_tokens, 45)
+
+            results = root / "results.jsonl"
+            run = record_experiment_run(
+                plan,
+                [checkpoint],
+                results,
+                run_id=card.run_id,
+                worktree=worktree,
+                trace_path=trace,
+                agent_b="codex",
+                model_b="gpt-test",
+                duration_seconds=12.5,
+                repeated_exploration=1,
+                incorrect_assumptions=0,
+            )
+            self.assertEqual(run.input_tokens, 45)
+            self.assertEqual(run.raw_input_tokens, 100)
+            self.assertEqual(run.cached_input_tokens, 60)
+            self.assertEqual(run.output_tokens, 5)
+            self.assertEqual(run.trace_sha256, sha256(trace.read_bytes()).hexdigest())
+            self.assertFalse(run.tests_passed)
+            self.assertIsNotNone(run.test_output_path)
+            self.assertIsNotNone(run.diff_path)
+            self.assertIn("exit_code=1", Path(run.test_output_path or "").read_text())
+            self.assertEqual(
+                run.test_output_sha256,
+                sha256(Path(run.test_output_path or "").read_bytes()).hexdigest(),
+            )
+            self.assertEqual(load_runs(results), [run])
+            with self.assertRaisesRegex(ValueError, "already recorded"):
+                record_experiment_run(
+                    plan,
+                    [checkpoint],
+                    results,
+                    run_id=card.run_id,
+                    worktree=worktree,
+                    trace_path=trace,
+                    agent_b="codex",
+                    model_b="gpt-test",
+                    duration_seconds=12.5,
+                    repeated_exploration=1,
+                    incorrect_assumptions=0,
+                )
 
 
 if __name__ == "__main__":

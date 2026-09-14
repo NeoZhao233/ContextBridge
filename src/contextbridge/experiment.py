@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import random
 import re
+import shlex
 import subprocess
+import sys
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -64,6 +66,15 @@ class ExperimentRun(BaseModel):
     repeated_exploration: int = Field(ge=0)
     incorrect_assumptions: int = Field(ge=0)
     trace_path: str | None = None
+    raw_input_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    trace_sha256: str | None = None
+    test_exit_code: int | None = None
+    test_output_path: str | None = None
+    test_output_sha256: str | None = None
+    diff_path: str | None = None
+    diff_sha256: str | None = None
     notes: str | None = None
 
 
@@ -120,6 +131,16 @@ class ExperimentRunCard(BaseModel):
     test_command: str
     condition_payload: str
     stage_a_checkpoint: str | None = None
+
+
+class CodexTraceUsage(BaseModel):
+    raw_input_tokens: int = Field(ge=0)
+    cached_input_tokens: int = Field(ge=0)
+    output_tokens: int = Field(ge=0)
+
+    @property
+    def reported_tokens(self) -> int:
+        return max(self.raw_input_tokens - self.cached_input_tokens, 0) + self.output_tokens
 
 
 def load_manifest(path: Path) -> ExperimentManifest:
@@ -233,6 +254,166 @@ def record_checkpoint(
     with path.open("a", encoding="utf-8") as stream:
         stream.write(checkpoint.model_dump_json() + "\n")
     return path
+
+
+def load_codex_trace_usage(path: Path) -> CodexTraceUsage:
+    usage = None
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"Invalid Codex trace JSON at line {line_number}: {error}") from error
+        if not isinstance(event, dict):
+            raise TypeError(f"Invalid Codex trace event at line {line_number}: expected object")
+        if event.get("type") != "turn.completed" or not isinstance(event.get("usage"), dict):
+            continue
+        candidate = event["usage"]
+        try:
+            usage = CodexTraceUsage(
+                raw_input_tokens=candidate["input_tokens"],
+                cached_input_tokens=candidate.get("cached_input_tokens", 0),
+                output_tokens=candidate["output_tokens"],
+            )
+        except (KeyError, ValueError) as error:
+            raise ValueError(f"Invalid Codex usage at line {line_number}: {error}") from error
+    if usage is None:
+        raise ValueError("Codex trace contains no turn.completed usage event")
+    return usage
+
+
+def record_experiment_run(
+    plan: ExperimentPlan,
+    checkpoints: list[ExperimentCheckpoint],
+    output: Path,
+    *,
+    run_id: str,
+    worktree: Path,
+    trace_path: Path,
+    agent_b: str,
+    model_b: str,
+    duration_seconds: float,
+    repeated_exploration: int,
+    incorrect_assumptions: int,
+    notes: str | None = None,
+) -> ExperimentRun:
+    if duration_seconds < 0 or repeated_exploration < 0 or incorrect_assumptions < 0:
+        raise ValueError("Experiment duration and manual counts must be non-negative")
+    assignments = {assignment.run_id: assignment for assignment in plan.assignments}
+    if run_id not in assignments:
+        raise ValueError(f"Unknown experiment run ID: {run_id}")
+    assignment = assignments[run_id]
+    destination = output.expanduser().resolve()
+    existing = load_runs(destination) if destination.exists() else []
+    if run_id in {item.run_id for item in existing}:
+        raise ValueError(f"Experiment result already recorded for run: {run_id}")
+    tasks = {task.id: task for task in plan.tasks}
+    task = tasks[assignment.task_id]
+    matching = [item for item in checkpoints if item.task_id == assignment.task_id]
+    if len(matching) != 1:
+        raise ValueError(f"Expected one Stage-A checkpoint for task: {assignment.task_id}")
+    checkpoint = matching[0]
+    validate_checkpoint(plan, checkpoint)
+
+    repository = worktree.expanduser().resolve()
+    resolved_head = _git_commit(repository, "HEAD")
+    if resolved_head != checkpoint.commit:
+        raise ValueError(
+            f"Worktree HEAD does not match Stage-A checkpoint: {resolved_head or 'unresolved'}"
+        )
+    condition_path = repository / ".contextbridge" / "condition.md"
+    if assignment.condition == ExperimentCondition.NO_CONTEXT:
+        if condition_path.exists():
+            raise ValueError("No-context run unexpectedly contains a condition input")
+    else:
+        source = {
+            ExperimentCondition.RAW_HISTORY: checkpoint.transcript_path,
+            ExperimentCondition.ONE_SHOT_SUMMARY: checkpoint.summary_path,
+            ExperimentCondition.CONTEXTBRIDGE: checkpoint.context_pack_path,
+        }[assignment.condition]
+        if not condition_path.is_file():
+            raise ValueError("Prepared run is missing .contextbridge/condition.md")
+        if condition_path.read_bytes() != Path(source).expanduser().resolve().read_bytes():
+            raise ValueError("Prepared condition input does not match the recorded checkpoint artifact")
+
+    trace = trace_path.expanduser().resolve()
+    usage = load_codex_trace_usage(trace)
+    test_arguments = shlex.split(task.test_command)
+    if not test_arguments:
+        raise ValueError(f"Task has an empty test command: {assignment.task_id}")
+    if test_arguments and test_arguments[0] in {"python", "python3"}:
+        test_arguments[0] = sys.executable
+    test = subprocess.run(
+        test_arguments,
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    artifact_slug = re.sub(r"[^A-Za-z0-9._-]+", "-", run_id).strip("-.") or "run"
+    artifact_slug = f"{artifact_slug[:64]}-{sha256(run_id.encode()).hexdigest()[:8]}"
+    artifacts = destination.parent / f"{destination.stem}.artifacts"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    test_output_path = artifacts / f"{artifact_slug}.test.txt"
+    test_output = (
+        f"$ {task.test_command}\n"
+        f"exit_code={test.returncode}\n\n"
+        f"--- stdout ---\n{test.stdout}\n"
+        f"--- stderr ---\n{test.stderr}"
+    )
+    test_output_path.write_text(test_output, encoding="utf-8")
+    diff = subprocess.run(
+        ["git", "-C", str(repository), "diff", "HEAD", "--binary", "--no-ext-diff"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if diff.returncode != 0:
+        raise ValueError(f"Could not capture experiment diff: {diff.stderr.strip()}")
+    status = subprocess.run(
+        ["git", "-C", str(repository), "status", "--short"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        raise ValueError(f"Could not capture experiment status: {status.stderr.strip()}")
+    diff_path = artifacts / f"{artifact_slug}.diff"
+    diff_path.write_text(
+        f"# git status --short\n{status.stdout}\n"
+        f"# git diff HEAD --binary --no-ext-diff\n{diff.stdout}",
+        encoding="utf-8",
+    )
+    run = ExperimentRun(
+        run_id=run_id,
+        agent_a=checkpoint.agent_a,
+        agent_b=agent_b,
+        model_a=checkpoint.model_a,
+        model_b=model_b,
+        tests_passed=test.returncode == 0,
+        duration_seconds=duration_seconds,
+        input_tokens=usage.reported_tokens,
+        raw_input_tokens=usage.raw_input_tokens,
+        cached_input_tokens=usage.cached_input_tokens,
+        output_tokens=usage.output_tokens,
+        trace_path=str(trace),
+        trace_sha256=sha256(trace.read_bytes()).hexdigest(),
+        test_exit_code=test.returncode,
+        test_output_path=str(test_output_path),
+        test_output_sha256=sha256(test_output_path.read_bytes()).hexdigest(),
+        diff_path=str(diff_path),
+        diff_sha256=sha256(diff_path.read_bytes()).hexdigest(),
+        repeated_exploration=repeated_exploration,
+        incorrect_assumptions=incorrect_assumptions,
+        notes=notes,
+    )
+
+    score_experiment(plan, [*existing, run])
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("a", encoding="utf-8") as stream:
+        stream.write(run.model_dump_json() + "\n")
+    return run
 
 
 def preflight_experiment(plan: ExperimentPlan) -> ExperimentPreflightReport:
@@ -522,7 +703,7 @@ def render_experiment_report(report: ExperimentReport) -> str:
         "",
         f"Completed: {report.completed}/{report.planned}",
         "",
-        "| Condition | Runs | Test pass | Seconds | Input tokens | Re-exploration | Wrong assumptions |",
+        "| Condition | Runs | Test pass | Seconds | Reported tokens | Re-exploration | Wrong assumptions |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for score in report.scores:

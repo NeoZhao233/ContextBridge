@@ -148,7 +148,8 @@ Preserve the run trace and diff before removing a completed worktree. Then use o
 an uncommitted agent result.
 
 For each assignment, start a fresh Agent B session from the prepared checkpoint with `stage_b_prompt`
-and exactly one condition payload:
+and exactly one condition payload. Leave Agent B's changes uncommitted so the recorder can verify
+that `HEAD` still identifies the shared Stage-A checkpoint:
 
 - `no_context`: no earlier conversation or generated summary.
 - `raw_history`: the complete permitted Agent A transcript.
@@ -161,10 +162,30 @@ conditions. Do not retry only failed conditions.
 
 ### Record and aggregate results
 
-Write one JSON object per completed run using `experiments/results.example.jsonl` as the schema. A
-trace path should point to retained raw evidence. `repeated_exploration` counts file reads or searches
-that repeat Agent A's documented exploration; `incorrect_assumptions` counts claims about prior work
-that conflict with the pinned repository or Agent A trace.
+Run Agent B with Codex's JSONL output enabled and retain that trace. Then record the run through the
+CLI instead of hand-authoring JSONL:
+
+```bash
+contextbridge experiment-record \
+  --plan experiments/plan.json \
+  --checkpoints experiments/checkpoints.jsonl \
+  --results experiments/results.jsonl \
+  --run cli-precedence--contextbridge \
+  --worktree /tmp/contextbridge-runs/01-cli-precedence--contextbridge-48898aa8 \
+  --trace traces/cli-precedence--contextbridge.codex.jsonl \
+  --model-b gpt-5.6-sol \
+  --duration-seconds 133.4 \
+  --repeated-exploration 0 \
+  --incorrect-assumptions 0
+```
+
+The recorder verifies the run ID, checkpoint commit, and exact condition input before executing the
+task's pinned test command. It derives reported tokens as uncached input plus output from the final
+`turn.completed` usage event. It retains raw, cached, and output counts separately and writes
+SHA-256-addressed evidence for the Codex trace, test output, and final Git diff. Failed tests are
+recorded rather than discarded. `repeated_exploration` counts file reads or searches that repeat
+Agent A's documented exploration; `incorrect_assumptions` counts claims about prior work that
+conflict with the pinned repository or Agent A trace. Those two judgment-based fields remain manual.
 
 ```bash
 contextbridge experiment-report \
@@ -174,5 +195,5 @@ contextbridge experiment-report \
 ```
 
 The reporter rejects duplicate and unknown run IDs, keeps missing runs visible, and aggregates pass
-rate, duration, input tokens, repeated exploration, and incorrect assumptions by condition. It does
-not fill in missing results or calculate significance for a small resume-project sample.
+rate, duration, reported tokens, repeated exploration, and incorrect assumptions by condition. It
+does not fill in missing results or calculate significance for a small resume-project sample.

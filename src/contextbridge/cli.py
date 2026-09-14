@@ -21,6 +21,7 @@ from .experiment import (
     preflight_experiment,
     prepare_experiment_run,
     record_checkpoint,
+    record_experiment_run,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -129,6 +130,22 @@ def parser() -> argparse.ArgumentParser:
     experiment_checkpoint.add_argument("--transcript", required=True, type=Path)
     experiment_checkpoint.add_argument("--summary", required=True, type=Path)
     experiment_checkpoint.add_argument("--context-pack", required=True, type=Path)
+
+    experiment_record = commands.add_parser(
+        "experiment-record", help="Verify and record one completed Agent B run"
+    )
+    experiment_record.add_argument("--plan", required=True, type=Path)
+    experiment_record.add_argument("--checkpoints", required=True, type=Path)
+    experiment_record.add_argument("--results", required=True, type=Path)
+    experiment_record.add_argument("--run", required=True)
+    experiment_record.add_argument("--worktree", required=True, type=Path)
+    experiment_record.add_argument("--trace", required=True, type=Path)
+    experiment_record.add_argument("--agent-b", default="codex")
+    experiment_record.add_argument("--model-b", required=True)
+    experiment_record.add_argument("--duration-seconds", required=True, type=float)
+    experiment_record.add_argument("--repeated-exploration", required=True, type=int)
+    experiment_record.add_argument("--incorrect-assumptions", required=True, type=int)
+    experiment_record.add_argument("--notes")
 
     commands.add_parser("status", help="Show store and plugin status")
     validate = commands.add_parser("validate", help="Validate a generated Context Pack")
@@ -289,6 +306,30 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
         )
         print(f"Prepared clean worktree at {worktree}")
         print(rendered)
+        return 0
+    if options.command == "experiment-record":
+        try:
+            run = record_experiment_run(
+                load_plan(options.plan),
+                load_checkpoints(options.checkpoints),
+                options.results,
+                run_id=options.run,
+                worktree=options.worktree,
+                trace_path=options.trace,
+                agent_b=options.agent_b,
+                model_b=options.model_b,
+                duration_seconds=options.duration_seconds,
+                repeated_exploration=options.repeated_exploration,
+                incorrect_assumptions=options.incorrect_assumptions,
+                notes=options.notes,
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        outcome = "passed" if run.tests_passed else f"failed (exit {run.test_exit_code})"
+        print(
+            f"Recorded {run.run_id}: tests {outcome}; "
+            f"reported tokens {run.input_tokens}"
+        )
         return 0
     if options.command == "validate":
         path = options.path.resolve()
