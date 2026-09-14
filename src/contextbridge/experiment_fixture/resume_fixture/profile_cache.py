@@ -21,5 +21,9 @@ class ProfileService:
 
     def update(self, user_id: str, value: str) -> None:
         # Commit-boundary behavior is deliberately incomplete for the handoff study.
-        self.cache.pop(user_id, None)
-        self.store.commit(user_id, value)
+        try:
+            self.cache.pop(user_id, None)
+            self.store.commit(user_id, value)
+        except CommitError:
+            self.cache.pop(user_id, None)
+            raise
