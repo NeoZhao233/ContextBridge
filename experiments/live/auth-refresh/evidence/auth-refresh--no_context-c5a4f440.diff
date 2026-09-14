@@ -1,0 +1,77 @@
+# git status --short
+ M docs/refresh-token-rotation-policy.md
+ M resume_fixture/refresh_tokens.py
+?? resume_fixture/__pycache__/
+?? tests/__pycache__/
+
+# git diff HEAD --binary --no-ext-diff
+diff --git a/docs/refresh-token-rotation-policy.md b/docs/refresh-token-rotation-policy.md
+index 17507df..a0605ee 100644
+--- a/docs/refresh-token-rotation-policy.md
++++ b/docs/refresh-token-rotation-policy.md
+@@ -62,26 +62,14 @@ coexistence.
+ 
+ ## Implementation status
+ 
+-Implemented (this change):
++Implemented:
+ 
+ - Typed errors: `RefreshTokenError` (base, still a `ValueError`),
+   `RefreshTokenReuseError`, `TokenFamilyRevokedError`.
+ - Replay detection records evidence on the family (`TokenFamily.replayed_tokens`,
+-  read via `RefreshTokenStore.replay_evidence`) — the signal revocation will act
+-  on, and what a future logger/alert would read.
+-
+-Not implemented — handoff to Agent B:
+-
+-- `RefreshTokenStore.exchange` detects replay and raises
+-  `RefreshTokenReuseError` but does **not** revoke the family. See the
+-  `TODO(agent-b)` in that branch.
+-- To finish: set the family's `revoked` flag (or otherwise close every token
+-  issued from that grant) before raising, so the next exchange for the family
+-  fails with `TokenFamilyRevokedError("token family revoked")`.
+-- The targeted test
+-  `tests/test_refresh_tokens.py::RefreshTokenTests::test_replay_revokes_the_entire_family`
+-  currently fails on its second assertion for exactly this reason. Its first
+-  assertion passes. Do not weaken the test to make it pass; the missing code is
+-  the revocation step.
+-- `tests/test_refresh_tokens.py::test_replay_is_detected_and_recorded` covers the
+-  detection half and passes today; it should keep passing afterwards.
++  read via `RefreshTokenStore.replay_evidence`) for a future logger or alert.
++- A replay marks the family revoked before raising `RefreshTokenReuseError`.
++  Subsequent exchanges in that family fail with
++  `TokenFamilyRevokedError("token family revoked")`.
++- `tests/test_refresh_tokens.py` covers both evidence recording and terminal
++  family revocation.
+diff --git a/resume_fixture/refresh_tokens.py b/resume_fixture/refresh_tokens.py
+index 9a4aef6..0bc416d 100644
+--- a/resume_fixture/refresh_tokens.py
++++ b/resume_fixture/refresh_tokens.py
+@@ -4,9 +4,8 @@ Replay policy: presenting a refresh token that has already been rotated away is
+ treated as evidence of theft and closes the entire token family. The policy and
+ its rationale are recorded in ``docs/refresh-token-rotation-policy.md``.
+ 
+-Status: replay *detection* is implemented here; family *revocation* is not yet
+-wired up. See the TODO in :meth:`RefreshTokenStore.exchange` and the handoff
+-section of the policy document.
++Replay evidence is recorded before the family is revoked, so callers can retain
++the token that triggered the terminal state for logging or investigation.
+ """
+ 
+ from dataclasses import dataclass, field
+@@ -50,14 +49,6 @@ class RefreshTokenStore:
+             raise TokenFamilyRevokedError("token family revoked")
+         if presented_token != family.active_token:
+             family.replayed_tokens.append(presented_token)
+-            # TODO(agent-b): finish the replay policy. Detection above is done;
+-            # what remains is family revocation: mark the family revoked (and, in
+-            # a store that models more than one live token per family, close
+-            # every sibling issued from the same grant) *before* raising, so the
+-            # next exchange for this family fails with TokenFamilyRevokedError.
+-            # This branch deliberately raises here and stops short of that, so
+-            # tests/test_refresh_tokens.py::RefreshTokenTests::
+-            # test_replay_revokes_the_entire_family still fails on its second
+-            # assertion. Policy: docs/refresh-token-rotation-policy.md.
++            family.revoked = True
+             raise RefreshTokenReuseError("refresh token reuse")
+         family.active_token = next_token

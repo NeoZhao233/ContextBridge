@@ -1,0 +1,2 @@
+# Preserve byte-exact generated experiment evidence; whitespace is part of its recorded hash.
+experiments/live/** -whitespace

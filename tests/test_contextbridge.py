@@ -42,7 +42,7 @@ from contextbridge.experiment import (
     score_experiment,
 )
 from contextbridge.fixture import create_experiment_fixture
-from contextbridge.git_state import current_commit
+from contextbridge.git_state import current_commit, project_state
 from contextbridge.models import (
     ContextEvent,
     Memory,
@@ -57,6 +57,20 @@ from contextbridge.validation import validate_context_pack
 
 
 class ContextBridgeTests(unittest.TestCase):
+    def test_project_state_ignores_contextbridge_and_runtime_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            (root / ".contextbridge").mkdir()
+            (root / ".contextbridge" / "contextbridge.db").write_text("db")
+            (root / "package" / "__pycache__").mkdir(parents=True)
+            (root / "package" / "__pycache__" / "module.pyc").write_text("cache")
+            (root / ".pytest_cache").mkdir()
+            (root / ".pytest_cache" / "README.md").write_text("cache")
+            (root / "implementation.py").write_text("changed = True\n")
+
+            self.assertEqual(project_state(root).changed_files, ["?? implementation.py"])
+
     def test_sync_is_incremental_and_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

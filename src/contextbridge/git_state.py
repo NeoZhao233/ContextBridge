@@ -5,6 +5,14 @@ from pathlib import Path
 
 from .models import Memory, ProjectState
 
+_RUNTIME_DIRECTORIES = {
+    ".contextbridge",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+}
+
 
 def _git(cwd: Path, *arguments: str) -> str | None:
     try:
@@ -24,14 +32,21 @@ def current_commit(cwd: Path) -> str | None:
     return _git(cwd, "rev-parse", "HEAD")
 
 
+def _project_change(line: str) -> bool:
+    if not line.startswith("?? "):
+        return True
+    path = line[3:].strip().strip('"').rstrip("/")
+    return not (_RUNTIME_DIRECTORIES & set(Path(path).parts)) and not path.endswith(".pyc")
+
+
 def project_state(cwd: Path) -> ProjectState:
-    status = _git(cwd, "status", "--short")
+    status = _git(cwd, "status", "--short", "--untracked-files=all")
     recent = _git(cwd, "log", "-5", "--pretty=format:%h %s")
     return ProjectState(
         root=cwd,
         branch=_git(cwd, "branch", "--show-current"),
         commit=current_commit(cwd),
-        changed_files=status.splitlines() if status else [],
+        changed_files=[line for line in status.splitlines() if _project_change(line)] if status else [],
         recent_commits=recent.splitlines() if recent else [],
     )
 

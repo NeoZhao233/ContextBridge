@@ -220,12 +220,13 @@ for twelve runs measuring test pass rate, input tokens, time, and repeated explo
 and twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
 definitions, current offline results, limitations, and the end-to-end design.
 
-A [live Claude Code → ContextBridge → Codex smoke test and matched four-condition replay](docs/smoke-test.md)
-has also passed on the configuration-precedence fixture. ContextBridge discovered the Claude
-session, produced a validated 1,913-token pack, and a fresh Codex session completed the remaining
-change with both targeted tests passing. In the preliminary replay it used 66.3% fewer Agent B
-tokens than raw history, but was slower by wall-clock time. With one run per condition, these are
-diagnostic observations rather than benchmark claims.
+[Live Claude Code → ContextBridge → Codex smoke tests and matched four-condition replays](docs/smoke-test.md)
+have passed on two fixtures. On configuration precedence, ContextBridge used 66.3% fewer Agent B
+tokens than raw history but was slower. On refresh-token replay it was fastest, while the one-shot
+summary used the fewest tokens. All conditions passed, and the mixed trade-offs are reported rather
+than collapsed into a superiority claim. The committed
+[auth-refresh evidence](experiments/live/auth-refresh/) includes traces, handoff inputs, test output,
+diffs, and hashes. These one-run-per-condition results remain diagnostic rather than statistical.
 
 The repository also includes executable experiment bookkeeping:
 

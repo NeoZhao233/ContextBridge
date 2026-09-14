@@ -78,3 +78,38 @@ latency, model-service variance, and ordering effects dominate, so this result s
 speed claim nor statistical superiority. The planned twelve-run study remains necessary. It should
 also randomize condition order and repeat tasks before any numbers are promoted to the project
 headline or a résumé.
+
+## Second matched task: refresh-token replay
+
+On 2026-09-14, the same protocol completed a second four-condition replay on the
+`auth-refresh` fixture. Claude Code 2.1.236 routed to `deepseek-v4-flash` selected whole-family
+revocation, implemented replay evidence, and deliberately stopped before setting the revocation
+flag. Its checkpoint was `4d4abc7adaf69f88a336fe4836e8eaf382adf626`; one of two targeted tests
+still failed as intended. The Stage A API call cost $0.463926.
+
+Every Agent B run used `gpt-5.6-sol` with medium reasoning and the same prompt and checkpoint. The
+condition order was one-shot summary, no context, raw history, then ContextBridge. The recorder
+reran the pinned tests and derived reported tokens from each final Codex usage event.
+
+| Condition | Agent B reported tokens | Seconds | Re-exploration | Target tests |
+|---|---:|---:|---:|---:|
+| no context | 28,853 | 74.8 | 7 | 2/2 |
+| raw history | 29,880 | 71.5 | 6 | 2/2 |
+| one-shot summary | 21,380 | 104.0 | 4 | 2/2 |
+| ContextBridge | 29,443 | 59.5 | 5 | 2/2 |
+
+This task produced a different trade-off from configuration precedence. ContextBridge was the
+fastest condition and avoided two repeated exploration actions relative to no context, but it did
+not reduce tokens relative to raw history. The one-shot summary used the fewest tokens yet was the
+slowest. All conditions produced the required behavior, so this result argues for reporting several
+metrics rather than reducing handoff quality to token count alone.
+
+The first generated summary incorrectly promoted Agent A's temporary “stop before revocation”
+instruction into an Agent B constraint. That draft was excluded, the fixed summary prompt was
+clarified to distinguish stage-local stopping instructions from continuing constraints, and the
+summary was regenerated before any Agent B run. This is both a protocol correction and a concrete
+example of why handoff provenance and instruction precedence matter.
+
+The committed [auth-refresh artifacts](../experiments/live/auth-refresh/) contain the four Codex
+JSONL traces, condition inputs, result records, test output, final diffs, and SHA-256 hashes. The
+sample is still one run per condition and remains descriptive rather than statistically significant.
