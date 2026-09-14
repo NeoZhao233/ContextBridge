@@ -11,13 +11,16 @@ from .context_pack import build_context_pack
 from .discovery import discover_sessions
 from .evaluation import evaluate_cases, load_cases, render_report
 from .experiment import (
+    ExperimentCheckpoint,
     create_plan,
+    load_checkpoints,
     load_manifest,
     load_plan,
     load_runs,
     next_experiment_run,
     preflight_experiment,
     prepare_experiment_run,
+    record_checkpoint,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -110,8 +113,22 @@ def parser() -> argparse.ArgumentParser:
     )
     experiment_prepare.add_argument("--plan", required=True, type=Path)
     experiment_prepare.add_argument("--results", type=Path)
+    experiment_prepare.add_argument("--checkpoints", type=Path)
     experiment_prepare.add_argument("--worktree-root", required=True, type=Path)
     experiment_prepare.add_argument("--format", choices=["markdown", "json"], default="markdown")
+
+    experiment_checkpoint = commands.add_parser(
+        "experiment-checkpoint", help="Record one reusable Stage-A checkpoint"
+    )
+    experiment_checkpoint.add_argument("--plan", required=True, type=Path)
+    experiment_checkpoint.add_argument("--output", required=True, type=Path)
+    experiment_checkpoint.add_argument("--task", required=True)
+    experiment_checkpoint.add_argument("--commit", required=True)
+    experiment_checkpoint.add_argument("--agent-a", required=True)
+    experiment_checkpoint.add_argument("--model-a", required=True)
+    experiment_checkpoint.add_argument("--transcript", required=True, type=Path)
+    experiment_checkpoint.add_argument("--summary", required=True, type=Path)
+    experiment_checkpoint.add_argument("--context-pack", required=True, type=Path)
 
     commands.add_parser("status", help="Show store and plugin status")
     validate = commands.add_parser("validate", help="Validate a generated Context Pack")
@@ -236,13 +253,30 @@ def run(arguments: list[str] | None = None, cwd: Path | None = None) -> int:
         )
         print(rendered)
         return 0
-    if options.command == "experiment-prepare":
-        runs = load_runs(options.results) if options.results else []
+    if options.command == "experiment-checkpoint":
+        checkpoint = ExperimentCheckpoint(
+            task_id=options.task,
+            commit=options.commit,
+            agent_a=options.agent_a,
+            model_a=options.model_a,
+            transcript_path=str(options.transcript.expanduser().resolve()),
+            summary_path=str(options.summary.expanduser().resolve()),
+            context_pack_path=str(options.context_pack.expanduser().resolve()),
+        )
         try:
+            output = record_checkpoint(load_plan(options.plan), checkpoint, options.output)
+        except (OSError, ValueError) as error:
+            raise SystemExit(str(error)) from error
+        print(f"Recorded Stage-A checkpoint for {checkpoint.task_id} in {output}")
+        return 0
+    if options.command == "experiment-prepare":
+        try:
+            runs = load_runs(options.results) if options.results else []
+            checkpoints = load_checkpoints(options.checkpoints) if options.checkpoints else None
             prepared = prepare_experiment_run(
-                load_plan(options.plan), runs, options.worktree_root
+                load_plan(options.plan), runs, options.worktree_root, checkpoints
             )
-        except (FileExistsError, RuntimeError, ValueError) as error:
+        except (FileExistsError, OSError, RuntimeError, ValueError) as error:
             raise SystemExit(str(error)) from error
         if prepared is None:
             print("All planned experiment runs are complete.")

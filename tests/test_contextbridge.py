@@ -21,14 +21,17 @@ from contextbridge.database import ContextDatabase
 from contextbridge.discovery import discover_sessions
 from contextbridge.evaluation import evaluate_cases, load_cases, render_report
 from contextbridge.experiment import (
+    ExperimentCheckpoint,
     ExperimentCondition,
     ExperimentManifest,
     ExperimentRun,
     ExperimentTask,
     create_plan,
+    load_checkpoints,
     next_experiment_run,
     preflight_experiment,
     prepare_experiment_run,
+    record_checkpoint,
     render_experiment_report,
     render_preflight,
     render_run_card,
@@ -674,6 +677,131 @@ class ContextBridgeTests(unittest.TestCase):
                 prepare_experiment_run(plan, [], root / "runs")
             with self.assertRaisesRegex(ValueError, "outside"):
                 prepare_experiment_run(plan, [], repository / "runs")
+
+    def test_checkpoint_reuses_stage_a_commit_and_injects_only_condition_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repository, manifest_path, _ = create_experiment_fixture(root / "fixture")
+            manifest = ExperimentManifest.model_validate_json(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            manifest.tasks = [manifest.tasks[0]]
+            plan = create_plan(manifest, seed=3)
+            condition_order = {
+                ExperimentCondition.CONTEXTBRIDGE: 1,
+                ExperimentCondition.NO_CONTEXT: 2,
+                ExperimentCondition.RAW_HISTORY: 3,
+                ExperimentCondition.ONE_SHOT_SUMMARY: 4,
+            }
+            for assignment in plan.assignments:
+                assignment.order = condition_order[assignment.condition]
+
+            stage_a = root / "stage-a"
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repository),
+                    "worktree",
+                    "add",
+                    "--detach",
+                    str(stage_a),
+                    manifest.tasks[0].base_commit,
+                ],
+                capture_output=True,
+                check=True,
+            )
+            source = stage_a / "resume_fixture" / "refresh_tokens.py"
+            source.write_text(source.read_text(encoding="utf-8") + "\n# Stage A\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(stage_a), "add", "."], check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(stage_a),
+                    "-c",
+                    "user.name=ContextBridge",
+                    "-c",
+                    "user.email=contextbridge@example.invalid",
+                    "commit",
+                    "-q",
+                    "-m",
+                    "Record Stage A",
+                ],
+                check=True,
+            )
+            checkpoint_commit = subprocess.run(
+                ["git", "-C", str(stage_a), "rev-parse", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            transcript = root / "transcript.md"
+            summary = root / "summary.md"
+            context_pack = root / "handoff.md"
+            transcript.write_text("raw history", encoding="utf-8")
+            summary.write_text("summary", encoding="utf-8")
+            context_pack.write_text("# Context Pack\n", encoding="utf-8")
+            checkpoint = ExperimentCheckpoint(
+                task_id=manifest.tasks[0].id,
+                commit=checkpoint_commit,
+                agent_a="claude-code",
+                model_a="model-a",
+                transcript_path=str(transcript),
+                summary_path=str(summary),
+                context_pack_path=str(context_pack),
+            )
+            checkpoint_path = root / "checkpoints.jsonl"
+            record_checkpoint(plan, checkpoint, checkpoint_path)
+            with self.assertRaisesRegex(ValueError, "already recorded"):
+                record_checkpoint(plan, checkpoint, checkpoint_path)
+
+            prepared = prepare_experiment_run(
+                plan,
+                [],
+                root / "runs",
+                load_checkpoints(checkpoint_path),
+            )
+            assert prepared is not None
+            card, worktree = prepared
+            self.assertEqual(card.stage_a_checkpoint, checkpoint_commit)
+            self.assertEqual(
+                subprocess.run(
+                    ["git", "-C", str(worktree), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout.strip(),
+                checkpoint_commit,
+            )
+            self.assertEqual(
+                (worktree / ".contextbridge" / "condition.md").read_text(encoding="utf-8"),
+                "# Context Pack\n",
+            )
+            self.assertIn("Do not rerun Agent A", render_run_card(card))
+
+            completed = ExperimentRun(
+                run_id=card.run_id,
+                agent_a="claude-code",
+                agent_b="codex",
+                model_a="model-a",
+                model_b="model-b",
+                tests_passed=True,
+                duration_seconds=1,
+                input_tokens=1,
+                repeated_exploration=0,
+                incorrect_assumptions=0,
+            )
+            no_context = prepare_experiment_run(
+                plan,
+                [completed],
+                root / "no-context-runs",
+                [checkpoint],
+            )
+            assert no_context is not None
+            no_context_card, no_context_worktree = no_context
+            self.assertEqual(no_context_card.condition, ExperimentCondition.NO_CONTEXT)
+            self.assertFalse((no_context_worktree / ".contextbridge").exists())
 
 
 if __name__ == "__main__":

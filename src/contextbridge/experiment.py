@@ -67,6 +67,16 @@ class ExperimentRun(BaseModel):
     notes: str | None = None
 
 
+class ExperimentCheckpoint(BaseModel):
+    task_id: str
+    commit: str
+    agent_a: str
+    model_a: str
+    transcript_path: str
+    summary_path: str
+    context_pack_path: str
+
+
 class ConditionScore(BaseModel):
     condition: ExperimentCondition
     completed: int
@@ -109,6 +119,7 @@ class ExperimentRunCard(BaseModel):
     stage_b_prompt: str
     test_command: str
     condition_payload: str
+    stage_a_checkpoint: str | None = None
 
 
 def load_manifest(path: Path) -> ExperimentManifest:
@@ -157,6 +168,71 @@ def load_runs(path: Path) -> list[ExperimentRun]:
         except ValueError as error:
             raise ValueError(f"Invalid result at line {line_number}: {error}") from error
     return runs
+
+
+def load_checkpoints(path: Path) -> list[ExperimentCheckpoint]:
+    checkpoints = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            checkpoints.append(ExperimentCheckpoint.model_validate_json(line))
+        except ValueError as error:
+            raise ValueError(f"Invalid checkpoint at line {line_number}: {error}") from error
+    return checkpoints
+
+
+def _git_commit(repository: Path, commit: str) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(repository), "rev-parse", "--verify", f"{commit}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def validate_checkpoint(plan: ExperimentPlan, checkpoint: ExperimentCheckpoint) -> None:
+    tasks = {task.id: task for task in plan.tasks}
+    if checkpoint.task_id not in tasks:
+        raise ValueError(f"Checkpoint references unknown task: {checkpoint.task_id}")
+    task = tasks[checkpoint.task_id]
+    repository = Path(task.repository).expanduser().resolve()
+    resolved = _git_commit(repository, checkpoint.commit)
+    if resolved is None:
+        raise ValueError(f"Checkpoint commit does not resolve: {checkpoint.commit}")
+    if resolved != checkpoint.commit:
+        raise ValueError(f"Checkpoint commit must be a full object ID: {resolved}")
+    ancestor = subprocess.run(
+        ["git", "-C", str(repository), "merge-base", "--is-ancestor", task.base_commit, resolved],
+        capture_output=True,
+        check=False,
+    )
+    if ancestor.returncode != 0:
+        raise ValueError("Checkpoint commit must descend from the task base commit")
+    for label, value in (
+        ("transcript", checkpoint.transcript_path),
+        ("summary", checkpoint.summary_path),
+        ("Context Pack", checkpoint.context_pack_path),
+    ):
+        if not Path(value).expanduser().resolve().is_file():
+            raise ValueError(f"Checkpoint {label} does not exist: {value}")
+
+
+def record_checkpoint(
+    plan: ExperimentPlan,
+    checkpoint: ExperimentCheckpoint,
+    output: Path,
+) -> Path:
+    validate_checkpoint(plan, checkpoint)
+    path = output.expanduser().resolve()
+    existing = load_checkpoints(path) if path.exists() else []
+    if checkpoint.task_id in {item.task_id for item in existing}:
+        raise ValueError(f"Checkpoint already recorded for task: {checkpoint.task_id}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(checkpoint.model_dump_json() + "\n")
+    return path
 
 
 def preflight_experiment(plan: ExperimentPlan) -> ExperimentPreflightReport:
@@ -248,6 +324,7 @@ def prepare_experiment_run(
     plan: ExperimentPlan,
     runs: list[ExperimentRun],
     worktree_root: Path,
+    checkpoints: list[ExperimentCheckpoint] | None = None,
 ) -> tuple[ExperimentRunCard, Path] | None:
     preflight = preflight_experiment(plan)
     if not preflight.valid:
@@ -263,6 +340,18 @@ def prepare_experiment_run(
         return None
 
     repository = Path(card.repository).expanduser().resolve()
+    checkpoint = None
+    starting_commit = card.base_commit
+    if checkpoints is not None:
+        checkpoint_ids = [item.task_id for item in checkpoints]
+        if len(checkpoint_ids) != len(set(checkpoint_ids)):
+            raise ValueError("Experiment checkpoints contain duplicate task IDs")
+        task_id = card.run_id.rsplit("--", 1)[0]
+        checkpoint = next((item for item in checkpoints if item.task_id == task_id), None)
+        if checkpoint is None:
+            raise ValueError(f"No Stage-A checkpoint recorded for task: {task_id}")
+        validate_checkpoint(plan, checkpoint)
+        starting_commit = checkpoint.commit
     root = worktree_root.expanduser().resolve()
     try:
         root.relative_to(repository)
@@ -287,7 +376,7 @@ def prepare_experiment_run(
             "add",
             "--detach",
             str(destination),
-            card.base_commit,
+            starting_commit,
         ],
         capture_output=True,
         text=True,
@@ -296,11 +385,44 @@ def prepare_experiment_run(
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip() or "unknown git error"
         raise RuntimeError(f"Could not prepare experiment worktree: {detail}")
-    prepared_card = card.model_copy(update={"repository": str(destination)})
+    card_updates: dict[str, str] = {"repository": str(destination)}
+    if checkpoint is not None:
+        if card.condition == ExperimentCondition.NO_CONTEXT:
+            payload = "Provide Agent B only the stage-B prompt and checkpoint repository state."
+        else:
+            source = {
+                ExperimentCondition.RAW_HISTORY: checkpoint.transcript_path,
+                ExperimentCondition.ONE_SHOT_SUMMARY: checkpoint.summary_path,
+                ExperimentCondition.CONTEXTBRIDGE: checkpoint.context_pack_path,
+            }[card.condition]
+            input_directory = destination / ".contextbridge"
+            input_directory.mkdir(parents=True, exist_ok=True)
+            condition_input = input_directory / "condition.md"
+            condition_input.write_bytes(Path(source).expanduser().resolve().read_bytes())
+            payload = (
+                f"Provide Agent B only `.contextbridge/condition.md` as the "
+                f"{card.condition.value} handoff input."
+            )
+        card_updates.update(
+            {
+                "condition_payload": payload,
+                "stage_a_checkpoint": starting_commit,
+            }
+        )
+    prepared_card = card.model_copy(update=card_updates)
     return prepared_card, destination
 
 
 def render_run_card(card: ExperimentRunCard) -> str:
+    stage_a = (
+        [
+            "## Agent A checkpoint",
+            "",
+            f"Reuse `{card.stage_a_checkpoint}`. Do not rerun Agent A.",
+        ]
+        if card.stage_a_checkpoint
+        else ["## Agent A", "", card.stage_a_prompt]
+    )
     return "\n".join(
         [
             f"# Experiment run {card.order}: {card.run_id}",
@@ -308,11 +430,14 @@ def render_run_card(card: ExperimentRunCard) -> str:
             f"- Condition: `{card.condition.value}`",
             f"- Repository: `{card.repository}`",
             f"- Base commit: `{card.base_commit}`",
+            *(
+                [f"- Stage-A checkpoint: `{card.stage_a_checkpoint}`"]
+                if card.stage_a_checkpoint
+                else []
+            ),
             f"- Test command: `{card.test_command}`",
             "",
-            "## Agent A",
-            "",
-            card.stage_a_prompt,
+            *stage_a,
             "",
             "## Condition payload",
             "",

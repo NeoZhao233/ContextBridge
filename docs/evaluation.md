@@ -98,28 +98,57 @@ also rejects branch names, `HEAD`, and abbreviated hashes: the manifest must con
 ID reported by Git so later runs cannot silently move to a different baseline. Do not spend agent
 quota until preflight passes.
 
+### Record one Stage-A checkpoint per task
+
+For a matched comparison, run Agent A once per task rather than once per condition. Start from the
+task's `base_commit`, execute `stage_a_prompt`, and commit only Agent A's repository changes on the
+disposable worktree. Export the complete permitted transcript, produce the fixed one-shot summary,
+and generate and validate the Context Pack. Then record their paths with the full checkpoint commit:
+
+```bash
+contextbridge experiment-checkpoint \
+  --plan experiments/plan.json \
+  --output experiments/checkpoints.jsonl \
+  --task cli-precedence \
+  --commit <full-stage-a-commit> \
+  --agent-a claude-code \
+  --model-a deepseek-v4-flash \
+  --transcript traces/cli-precedence.raw.md \
+  --summary traces/cli-precedence.summary.md \
+  --context-pack traces/cli-precedence.contextbridge.md
+```
+
+The command verifies that the checkpoint resolves to a full Git object ID, descends from the task's
+base commit, and has all three condition artifacts. It rejects a second checkpoint for the same
+task. Keep generated handoff artifacts outside the checkpoint commit so all four worktrees receive
+only their assigned condition input.
+
 Use the plan order instead of choosing conditions manually. Prepare each run in its own worktree:
 
 ```bash
 contextbridge experiment-prepare \
   --plan experiments/plan.json \
+  --checkpoints experiments/checkpoints.jsonl \
   --results experiments/results.jsonl \
   --worktree-root /tmp/contextbridge-runs
 ```
 
-The command runs preflight, skips recorded run IDs, creates a clean detached Git worktree at the
-pinned commit, and prints a run card with the exact Agent A prompt, condition payload, Agent B prompt,
-working directory, commit, and test command. It refuses to overwrite an existing run directory or
-place the worktree root inside the fixture repository. Omit `--results` before the first run. When
-every assignment is recorded, it reports completion instead of silently cycling back. Use
-`experiment-next` instead when only a read-only preview of the next card is needed.
+The command runs preflight, skips recorded run IDs, and creates a clean detached Git worktree at the
+task's Stage-A checkpoint. It injects exactly one `.contextbridge/condition.md` for raw history,
+one-shot summary, or ContextBridge, and injects no file for `no_context`. The run card tells the
+operator not to rerun Agent A. It refuses to overwrite an existing run directory or place the
+worktree root inside the fixture repository. Omit `--results` before the first run. When every
+assignment is recorded, it reports completion instead of silently cycling back. Use
+`experiment-next` instead when only a read-only preview of the next card is needed. Omitting
+`--checkpoints` retains the earlier independent-pair workflow, but that mode does not control Agent A
+variance and should not be used for the reported comparison.
 
 Preserve the run trace and diff before removing a completed worktree. Then use ordinary
 `git worktree remove <run-directory>` from the fixture repository; avoid `--force`, which can discard
 an uncommitted agent result.
 
-For each assignment, let Agent A execute `stage_a_prompt`, then start a fresh Agent B session with
-`stage_b_prompt` and exactly one condition payload:
+For each assignment, start a fresh Agent B session from the prepared checkpoint with `stage_b_prompt`
+and exactly one condition payload:
 
 - `no_context`: no earlier conversation or generated summary.
 - `raw_history`: the complete permitted Agent A transcript.

@@ -239,8 +239,10 @@ contextbridge experiment-plan \
 
 contextbridge experiment-preflight --plan experiments/plan.json
 
+# Run Agent A once per task and record its checkpoint; see docs/evaluation.md.
 contextbridge experiment-prepare \
   --plan experiments/plan.json \
+  --checkpoints experiments/checkpoints.jsonl \
   --worktree-root /tmp/contextbridge-runs
 
 contextbridge experiment-report \
@@ -250,11 +252,12 @@ contextbridge experiment-report \
 
 The fixture command creates a standalone Git repository with three deliberately incomplete Python
 behaviors and a manifest pinned to its exact initial commit. It does not invoke an agent or consume
-model quota. Plans assign every task to all four conditions in seeded random order. Preflight checks repositories
-and pinned commits before agent quota is spent. Prepare selects the next missing assignment, creates
-a detached worktree at the pinned commit, and prints a run card spelling out exactly what context
-that condition permits. Reports reject duplicate or unknown run IDs and leave incomplete runs
-visible rather than silently dropping them.
+model quota. Plans assign every task to all four conditions in seeded random order. Record one
+Stage-A checkpoint per task with `experiment-checkpoint`; it pins the shared code state and the raw,
+summary, and ContextBridge artifacts. Preflight checks repositories and commits before agent quota is
+spent. Prepare selects the next missing assignment, creates a detached worktree at the shared
+checkpoint, injects only that condition's input, and prints the Agent B run card. Reports reject
+duplicate or unknown run IDs and leave incomplete runs visible rather than silently dropping them.
 
 ## Non-goals
 
