@@ -30,6 +30,7 @@ from contextbridge.experiment import (
     create_plan,
     load_checkpoints,
     load_codex_trace_usage,
+    load_hidden_evaluation_outcome,
     load_runs,
     next_experiment_run,
     preflight_experiment,
@@ -613,6 +614,8 @@ class ContextBridgeTests(unittest.TestCase):
             self.assertRegex(commit, r"^[0-9a-f]{40}$")
             self.assertTrue(preflight_experiment(plan).valid)
             self.assertEqual({task.base_commit for task in manifest.tasks}, {commit})
+            self.assertTrue(all(task.evaluation_command for task in manifest.tasks))
+            self.assertTrue(all(task.evaluation_sha256 for task in manifest.tasks))
             self.assertEqual(
                 subprocess.run(
                     ["git", "-C", str(repository), "status", "--porcelain"],
@@ -634,6 +637,25 @@ class ContextBridgeTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0, task.id)
                 self.assertIn("FAILED (", result.stderr, task.id)
                 self.assertNotIn("ModuleNotFoundError", result.stderr, task.id)
+
+                evaluator_path = Path((task.evaluation_command or "").split(maxsplit=1)[1])
+                evaluation = subprocess.run(
+                    [sys.executable, str(evaluator_path)],
+                    cwd=repository,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                outcome = load_hidden_evaluation_outcome(evaluation.stdout)
+                self.assertLess(outcome.task_completion_rate, 1.0, task.id)
+
+            evaluator = Path(
+                (manifest.tasks[0].evaluation_command or "").split(maxsplit=1)[1]
+            )
+            evaluator.write_text(evaluator.read_text() + "\n# tampered\n")
+            tampered = preflight_experiment(plan)
+            self.assertFalse(tampered.valid)
+            self.assertIn("SHA-256", tampered.tasks[0].errors[0])
 
             with self.assertRaises(FileExistsError):
                 create_experiment_fixture(output)
@@ -829,6 +851,20 @@ class ContextBridgeTests(unittest.TestCase):
                 manifest_path.read_text(encoding="utf-8")
             )
             manifest.tasks = [manifest.tasks[2]]
+            evaluator = root / "hidden-evaluator.py"
+            evaluator.write_text(
+                "import json\n"
+                "print('hidden checks complete')\n"
+                "print(json.dumps({\n"
+                "    'assertions_passed': 3, 'assertions_total': 4,\n"
+                "    'decision_checks_passed': 2, 'decision_checks_total': 3,\n"
+                "    'regressions': 1,\n"
+                "}))\n"
+                "raise SystemExit(1)\n",
+                encoding="utf-8",
+            )
+            manifest.tasks[0].evaluation_command = f"python {evaluator}"
+            manifest.tasks[0].evaluation_sha256 = sha256(evaluator.read_bytes()).hexdigest()
             plan = create_plan(manifest, seed=1)
             context_assignment = next(
                 item
@@ -888,11 +924,24 @@ class ContextBridgeTests(unittest.TestCase):
             self.assertIsNotNone(run.test_output_path)
             self.assertIsNotNone(run.diff_path)
             self.assertIn("exit_code=1", Path(run.test_output_path or "").read_text())
+            self.assertEqual(run.assertions_passed, 3)
+            self.assertEqual(run.assertions_total, 4)
+            self.assertEqual(run.decision_checks_passed, 2)
+            self.assertEqual(run.decision_checks_total, 3)
+            self.assertEqual(run.regressions, 1)
+            self.assertEqual(run.evaluation_exit_code, 1)
+            self.assertIn(
+                "hidden checks complete",
+                Path(run.evaluation_output_path or "").read_text(),
+            )
             self.assertEqual(
                 run.test_output_sha256,
                 sha256(Path(run.test_output_path or "").read_bytes()).hexdigest(),
             )
             self.assertEqual(load_runs(results), [run])
+            report = render_experiment_report(score_experiment(plan, [run]))
+            self.assertIn("75.0%", report)
+            self.assertIn("66.7%", report)
             with self.assertRaisesRegex(ValueError, "already recorded"):
                 record_experiment_run(
                     plan,
@@ -907,6 +956,13 @@ class ContextBridgeTests(unittest.TestCase):
                     repeated_exploration=1,
                     incorrect_assumptions=0,
                 )
+
+    def test_hidden_evaluation_rejects_impossible_counts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "cannot exceed"):
+            load_hidden_evaluation_outcome(
+                '{"assertions_passed":2,"assertions_total":1,'
+                '"decision_checks_passed":0,"decision_checks_total":0,"regressions":0}'
+            )
 
 
 if __name__ == "__main__":

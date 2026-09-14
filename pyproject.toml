@@ -28,6 +28,7 @@ contextbridge = [
     "bundled_skills/*/agents/openai.yaml",
     "experiment_fixture/*.json",
     "experiment_fixture/*.toml",
+    "experiment_fixture_hidden/*.py",
     "experiment_fixture/resume_fixture/*.py",
     "experiment_fixture/tests/*.py",
 ]

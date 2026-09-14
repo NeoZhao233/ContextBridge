@@ -216,8 +216,11 @@ reports required-memory recall, precision, source coverage, and estimated input 
 retrieval regression suite, not a coding-task success claim.
 
 The second evaluation layer starts with three real two-stage coding tasks under all four conditions,
-for twelve runs measuring test pass rate, input tokens, time, and repeated exploration. Five tasks
-and twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
+for twelve runs. V2 uses SHA-256-pinned hidden evaluators outside the target repository to measure
+strict pass rate, graded task completion, decision adherence, regressions, input tokens, time, and
+repeated exploration. The original visible-test-only study had a ceiling effect because every run
+passed; it remains useful for efficiency evidence, not outcome-superiority claims. Five tasks and
+twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
 definitions, current offline results, limitations, and the end-to-end design.
 
 [Live Claude Code → ContextBridge → Codex smoke tests and matched four-condition replays](docs/smoke-test.md)

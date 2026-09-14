@@ -1,8 +1,8 @@
 # Evaluation
 
 ContextBridge uses two evaluation layers. The first is a deterministic retrieval regression suite;
-the second is a planned end-to-end coding-agent study. Results from the first layer must not be
-reported as coding-task success rates.
+the second is an end-to-end coding-agent study. Results from the first layer must not be reported
+as coding-task success rates.
 
 ## Offline retrieval benchmark
 
@@ -59,9 +59,15 @@ forty or more runs are outside the MVP budget. Agent A performs the first stage 
 with no context, raw history, a summary from a fixed model and prompt, or ContextBridge. Pin model
 versions and settings, randomize condition order, and start each run from the same Git commit.
 
-Record task-test pass rate, completion time, input tokens, repeated file reads/searches, and incorrect
-assumptions about prior decisions. Keep failed runs and raw traces. This second layer is the evidence
-appropriate for claims about cross-agent task completion.
+Record strict pass rate, hidden task-completion rate, decision adherence, regressions, completion
+time, input tokens, repeated file reads/searches, and incorrect assumptions about prior decisions.
+Keep failed runs and raw traces. This second layer is the evidence appropriate for claims about
+cross-agent task completion.
+
+The first twelve-run study used only the visible targeted tests. All conditions passed, so that
+study has a ceiling effect: it can compare token use and exploration, but it cannot support a claim
+that one context strategy produces better task outcomes. The V2 protocol below fixes that weakness.
+It does not assume ContextBridge wins; the purpose of the experiment is to test that hypothesis.
 
 ### Prepare a run plan
 
@@ -72,11 +78,13 @@ contextbridge experiment-fixture \
   --output /tmp/contextbridge-resume-fixture
 ```
 
-This writes the repository and `/tmp/contextbridge-resume-fixture.tasks.json`. The fixture contains
-three independent Python tasks covering refresh-token replay, cache invalidation ordering, and
-configuration precedence. Each targeted test fails at the baseline by design. The generated manifest
-pins all tasks to the exact initial commit and lives outside the repository, leaving its checkout
-clean. Creating it is local-only and consumes no agent quota.
+This writes the repository, `/tmp/contextbridge-resume-fixture.tasks.json`, and a sibling
+`/tmp/contextbridge-resume-fixture.hidden` evaluator directory. The fixture contains three
+independent Python tasks covering refresh-token replay, cache invalidation ordering, and
+configuration precedence. Each targeted test fails at the baseline by design. The generated
+manifest pins the repository commit and each hidden evaluator's SHA-256. The evaluator is outside
+the target repository and is omitted from Agent B's run card, so it cannot be read while solving the
+task through normal repository exploration. Creating it is local-only and consumes no agent quota.
 
 Alternatively, copy `experiments/tasks.example.json`, replace its repository and commit placeholders,
 and add or remove tasks to match the desired budget. Three tasks produce twelve runs; five tasks
@@ -94,9 +102,9 @@ contextbridge experiment-preflight --plan experiments/plan.json
 Every task appears once under each condition. The seed randomizes run order reproducibly. A run must
 start from its task's pinned `base_commit` in a fresh worktree or disposable checkout.
 `experiment-preflight` resolves every repository and base commit without executing task code. It
-also rejects branch names, `HEAD`, and abbreviated hashes: the manifest must contain the full object
-ID reported by Git so later runs cannot silently move to a different baseline. Do not spend agent
-quota until preflight passes.
+also verifies that every hidden evaluator exists and matches its pinned SHA-256. It rejects branch
+names, `HEAD`, abbreviated hashes, and changed evaluators, preventing either the baseline or grading
+rules from moving between conditions. Do not spend agent quota until preflight passes.
 
 ### Record one Stage-A checkpoint per task
 
@@ -179,12 +187,18 @@ contextbridge experiment-record \
   --incorrect-assumptions 0
 ```
 
-The recorder verifies the run ID, checkpoint commit, and exact condition input before executing the
-task's pinned test command. It derives reported tokens as uncached input plus output from the final
-`turn.completed` usage event. It retains raw, cached, and output counts separately and writes
-SHA-256-addressed evidence for the Codex trace, test output, and final Git diff. Failed tests are
-recorded rather than discarded. `repeated_exploration` counts file reads or searches that repeat
-Agent A's documented exploration; `incorrect_assumptions` counts claims about prior work that
+The recorder verifies the run ID, checkpoint commit, exact condition input, and hidden-evaluator
+hash before executing both the visible test command and hidden evaluator. The evaluator's final
+stdout line must be a JSON object with `assertions_passed`, `assertions_total`,
+`decision_checks_passed`, `decision_checks_total`, and `regressions`. Strict pass requires all
+visible tests, all hidden behavior and decision checks, and zero regressions. Task completion and
+decision adherence remain separate rates; they are not collapsed into an arbitrary weighted score.
+
+The recorder derives reported tokens as uncached input plus output from the final `turn.completed`
+usage event. It retains raw, cached, and output counts separately and writes SHA-256-addressed
+evidence for the Codex trace, visible-test output, hidden-evaluator output, and final Git diff. Failed
+runs are recorded rather than discarded. `repeated_exploration` counts file reads or searches that
+repeat Agent A's documented exploration; `incorrect_assumptions` counts claims about prior work that
 conflict with the pinned repository or Agent A trace. Those two judgment-based fields remain manual.
 
 ```bash
@@ -194,6 +208,7 @@ contextbridge experiment-report \
   --output experiments/report.md
 ```
 
-The reporter rejects duplicate and unknown run IDs, keeps missing runs visible, and aggregates pass
-rate, duration, reported tokens, repeated exploration, and incorrect assumptions by condition. It
-does not fill in missing results or calculate significance for a small resume-project sample.
+The reporter rejects duplicate and unknown run IDs, keeps missing runs visible, and aggregates
+strict pass, task completion, decision adherence, regressions, duration, reported tokens, repeated
+exploration, and incorrect assumptions by condition. It does not fill in missing results, combine
+metrics with post-hoc weights, or calculate significance for a small resume-project sample.

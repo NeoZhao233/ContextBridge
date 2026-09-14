@@ -11,7 +11,7 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .models import utc_now
 
@@ -31,6 +31,8 @@ class ExperimentTask(BaseModel):
     stage_a_prompt: str
     stage_b_prompt: str
     test_command: str
+    evaluation_command: str | None = None
+    evaluation_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class ExperimentManifest(BaseModel):
@@ -75,6 +77,14 @@ class ExperimentRun(BaseModel):
     test_output_sha256: str | None = None
     diff_path: str | None = None
     diff_sha256: str | None = None
+    assertions_passed: int | None = Field(default=None, ge=0)
+    assertions_total: int | None = Field(default=None, ge=1)
+    decision_checks_passed: int | None = Field(default=None, ge=0)
+    decision_checks_total: int | None = Field(default=None, ge=0)
+    regressions: int | None = Field(default=None, ge=0)
+    evaluation_exit_code: int | None = None
+    evaluation_output_path: str | None = None
+    evaluation_output_sha256: str | None = None
     notes: str | None = None
 
 
@@ -97,6 +107,9 @@ class ConditionScore(BaseModel):
     average_input_tokens: float | None
     average_repeated_exploration: float | None
     average_incorrect_assumptions: float | None
+    average_task_completion_rate: float | None
+    average_decision_adherence_rate: float | None
+    average_regressions: float | None
 
 
 class ExperimentReport(BaseModel):
@@ -141,6 +154,40 @@ class CodexTraceUsage(BaseModel):
     @property
     def reported_tokens(self) -> int:
         return max(self.raw_input_tokens - self.cached_input_tokens, 0) + self.output_tokens
+
+
+class HiddenEvaluationOutcome(BaseModel):
+    assertions_passed: int = Field(ge=0)
+    assertions_total: int = Field(ge=1)
+    decision_checks_passed: int = Field(ge=0)
+    decision_checks_total: int = Field(ge=0)
+    regressions: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> HiddenEvaluationOutcome:
+        if self.assertions_passed > self.assertions_total:
+            raise ValueError("assertions_passed cannot exceed assertions_total")
+        if self.decision_checks_passed > self.decision_checks_total:
+            raise ValueError("decision_checks_passed cannot exceed decision_checks_total")
+        return self
+
+    @property
+    def task_completion_rate(self) -> float:
+        return self.assertions_passed / self.assertions_total
+
+    @property
+    def decision_adherence_rate(self) -> float | None:
+        if not self.decision_checks_total:
+            return None
+        return self.decision_checks_passed / self.decision_checks_total
+
+    @property
+    def successful(self) -> bool:
+        return (
+            self.assertions_passed == self.assertions_total
+            and self.decision_checks_passed == self.decision_checks_total
+            and self.regressions == 0
+        )
 
 
 def load_manifest(path: Path) -> ExperimentManifest:
@@ -213,6 +260,17 @@ def _git_commit(repository: Path, commit: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
+def _evaluation_program(command: str) -> Path:
+    arguments = shlex.split(command)
+    if not arguments:
+        raise ValueError("evaluation command is empty")
+    if Path(arguments[0]).name in {"python", "python3"}:
+        if len(arguments) < 2:
+            raise ValueError("Python evaluation command does not name a script")
+        return Path(arguments[1]).expanduser().resolve()
+    return Path(arguments[0]).expanduser().resolve()
+
+
 def validate_checkpoint(plan: ExperimentPlan, checkpoint: ExperimentCheckpoint) -> None:
     tasks = {task.id: task for task in plan.tasks}
     if checkpoint.task_id not in tasks:
@@ -281,6 +339,19 @@ def load_codex_trace_usage(path: Path) -> CodexTraceUsage:
     if usage is None:
         raise ValueError("Codex trace contains no turn.completed usage event")
     return usage
+
+
+def load_hidden_evaluation_outcome(output: str) -> HiddenEvaluationOutcome:
+    lines = [line for line in output.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("Hidden evaluator produced no output")
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise ValueError("Hidden evaluator's final line must be a JSON object") from error
+    if not isinstance(payload, dict):
+        raise TypeError("Hidden evaluator's final line must be a JSON object")
+    return HiddenEvaluationOutcome.model_validate(payload)
 
 
 def record_experiment_run(
@@ -363,6 +434,38 @@ def record_experiment_run(
         f"--- stderr ---\n{test.stderr}"
     )
     test_output_path.write_text(test_output, encoding="utf-8")
+    hidden_outcome = None
+    evaluation = None
+    evaluation_output_path = None
+    if task.evaluation_command:
+        evaluator = _evaluation_program(task.evaluation_command)
+        if not evaluator.is_file():
+            raise ValueError("Hidden evaluator does not exist")
+        if task.evaluation_sha256 is None:
+            raise ValueError("Hidden evaluator is not pinned by SHA-256")
+        if sha256(evaluator.read_bytes()).hexdigest() != task.evaluation_sha256:
+            raise ValueError("Hidden evaluator SHA-256 does not match the manifest")
+        evaluation_arguments = shlex.split(task.evaluation_command)
+        if not evaluation_arguments:
+            raise ValueError(f"Task has an empty evaluation command: {assignment.task_id}")
+        if evaluation_arguments[0] in {"python", "python3"}:
+            evaluation_arguments[0] = sys.executable
+        evaluation = subprocess.run(
+            evaluation_arguments,
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        hidden_outcome = load_hidden_evaluation_outcome(evaluation.stdout)
+        evaluation_output_path = artifacts / f"{artifact_slug}.evaluation.txt"
+        evaluation_output_path.write_text(
+            f"$ [hidden evaluator]\n"
+            f"exit_code={evaluation.returncode}\n\n"
+            f"--- stdout ---\n{evaluation.stdout}\n"
+            f"--- stderr ---\n{evaluation.stderr}",
+            encoding="utf-8",
+        )
     diff = subprocess.run(
         ["git", "-C", str(repository), "diff", "HEAD", "--binary", "--no-ext-diff"],
         capture_output=True,
@@ -391,7 +494,9 @@ def record_experiment_run(
         agent_b=agent_b,
         model_a=checkpoint.model_a,
         model_b=model_b,
-        tests_passed=test.returncode == 0,
+        tests_passed=(
+            test.returncode == 0 and (hidden_outcome is None or hidden_outcome.successful)
+        ),
         duration_seconds=duration_seconds,
         input_tokens=usage.reported_tokens,
         raw_input_tokens=usage.raw_input_tokens,
@@ -404,6 +509,22 @@ def record_experiment_run(
         test_output_sha256=sha256(test_output_path.read_bytes()).hexdigest(),
         diff_path=str(diff_path),
         diff_sha256=sha256(diff_path.read_bytes()).hexdigest(),
+        assertions_passed=(hidden_outcome.assertions_passed if hidden_outcome else None),
+        assertions_total=(hidden_outcome.assertions_total if hidden_outcome else None),
+        decision_checks_passed=(
+            hidden_outcome.decision_checks_passed if hidden_outcome else None
+        ),
+        decision_checks_total=(
+            hidden_outcome.decision_checks_total if hidden_outcome else None
+        ),
+        regressions=hidden_outcome.regressions if hidden_outcome else None,
+        evaluation_exit_code=evaluation.returncode if evaluation else None,
+        evaluation_output_path=(str(evaluation_output_path) if evaluation_output_path else None),
+        evaluation_output_sha256=(
+            sha256(evaluation_output_path.read_bytes()).hexdigest()
+            if evaluation_output_path
+            else None
+        ),
         repeated_exploration=repeated_exploration,
         incorrect_assumptions=incorrect_assumptions,
         notes=notes,
@@ -440,6 +561,20 @@ def preflight_experiment(plan: ExperimentPlan) -> ExperimentPreflightReport:
                         "base commit is not pinned to its full object ID; "
                         f"replace it with {resolved_commit}"
                     )
+        if task.evaluation_command:
+            try:
+                evaluator = _evaluation_program(task.evaluation_command)
+            except ValueError as error:
+                errors.append(str(error))
+            else:
+                if not evaluator.is_file():
+                    errors.append("hidden evaluator does not exist")
+                elif task.evaluation_sha256 is None:
+                    errors.append("hidden evaluator is not pinned by SHA-256")
+                elif sha256(evaluator.read_bytes()).hexdigest() != task.evaluation_sha256:
+                    errors.append("hidden evaluator SHA-256 does not match the manifest")
+        elif task.evaluation_sha256 is not None:
+            errors.append("hidden evaluator SHA-256 is set without an evaluation command")
         reports.append(
             ExperimentPreflightTask(
                 task_id=task.id,
@@ -683,6 +818,25 @@ def score_experiment(plan: ExperimentPlan, runs: list[ExperimentRun]) -> Experim
                 average_incorrect_assumptions=_average(
                     [run.incorrect_assumptions for run in condition_runs]
                 ),
+                average_task_completion_rate=_average(
+                    [
+                        run.assertions_passed / run.assertions_total
+                        for run in condition_runs
+                        if run.assertions_passed is not None and run.assertions_total is not None
+                    ]
+                ),
+                average_decision_adherence_rate=_average(
+                    [
+                        run.decision_checks_passed / run.decision_checks_total
+                        for run in condition_runs
+                        if run.decision_checks_passed is not None
+                        and run.decision_checks_total is not None
+                        and run.decision_checks_total > 0
+                    ]
+                ),
+                average_regressions=_average(
+                    [run.regressions for run in condition_runs if run.regressions is not None]
+                ),
             )
         )
     return ExperimentReport(
@@ -703,14 +857,26 @@ def render_experiment_report(report: ExperimentReport) -> str:
         "",
         f"Completed: {report.completed}/{report.planned}",
         "",
-        "| Condition | Runs | Test pass | Seconds | Reported tokens | Re-exploration | Wrong assumptions |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| Condition | Runs | Strict pass | Task outcome | Decision | Regressions | Seconds | Reported tokens | Re-exploration | Wrong assumptions |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for score in report.scores:
         pass_rate = "—" if score.pass_rate is None else f"{score.pass_rate:.1%}"
+        task_outcome = (
+            score.average_task_completion_rate * 100
+            if score.average_task_completion_rate is not None
+            else None
+        )
+        decision_adherence = (
+            score.average_decision_adherence_rate * 100
+            if score.average_decision_adherence_rate is not None
+            else None
+        )
         output.append(
             f"| {score.condition.value} | {score.completed}/{score.planned} | {pass_rate} | "
-            f"{value(score.average_duration_seconds)} | {value(score.average_input_tokens)} | "
+            f"{value(task_outcome, '%')} | {value(decision_adherence, '%')} | "
+            f"{value(score.average_regressions)} | {value(score.average_duration_seconds)} | "
+            f"{value(score.average_input_tokens)} | "
             f"{value(score.average_repeated_exploration)} | "
             f"{value(score.average_incorrect_assumptions)} |"
         )

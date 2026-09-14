@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from hashlib import sha256
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -38,6 +39,7 @@ def create_experiment_fixture(
     output: Path, manifest_output: Path | None = None
 ) -> tuple[Path, Path, str]:
     repository = output.expanduser().resolve()
+    evaluator_directory = repository.parent / f"{repository.name}.hidden"
     manifest_path = (
         manifest_output.expanduser().resolve()
         if manifest_output
@@ -47,9 +49,13 @@ def create_experiment_fixture(
         raise FileExistsError(f"Fixture output already exists: {repository}")
     if manifest_path.exists():
         raise FileExistsError(f"Fixture manifest already exists: {manifest_path}")
+    if evaluator_directory.exists():
+        raise FileExistsError(f"Fixture evaluator directory already exists: {evaluator_directory}")
 
     fixture = resources.files("contextbridge").joinpath("experiment_fixture")
+    hidden_fixture = resources.files("contextbridge").joinpath("experiment_fixture_hidden")
     _copy_fixture(fixture, repository)
+    _copy_fixture(hidden_fixture, evaluator_directory)
     _git(repository, "init", "-q")
     _git(repository, "add", ".")
     _git(
@@ -69,6 +75,14 @@ def create_experiment_fixture(
     rendered = template.replace("__REPOSITORY__", str(repository)).replace(
         "__BASE_COMMIT__", commit
     )
+    rendered = rendered.replace("__EVALUATOR_DIRECTORY__", str(evaluator_directory))
+    evaluator_hashes = {
+        "__AUTH_EVALUATOR_SHA256__": evaluator_directory / "auth_refresh.py",
+        "__CACHE_EVALUATOR_SHA256__": evaluator_directory / "cache_race.py",
+        "__CONFIG_EVALUATOR_SHA256__": evaluator_directory / "cli_precedence.py",
+    }
+    for placeholder, evaluator in evaluator_hashes.items():
+        rendered = rendered.replace(placeholder, sha256(evaluator.read_bytes()).hexdigest())
     manifest = ExperimentManifest.model_validate(json.loads(rendered))
     write_json(manifest_path, manifest)
     return repository, manifest_path, commit
