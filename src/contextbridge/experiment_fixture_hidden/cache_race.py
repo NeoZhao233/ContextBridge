@@ -28,13 +28,28 @@ def failure_state() -> tuple[dict[str, str], ProfileStore, bool]:
     store = ProfileStore()
     store.values["user"] = "old"
     store.fail_next_commit = True
-    cache = {"user": "old"}
+    cache = {"user": "old", "other": "stable"}
     raised = False
     try:
         ProfileService(store, cache).update("user", "new")
     except CommitError:
         raised = True
     return cache, store, raised
+
+
+def original_error_is_propagated() -> bool:
+    original = CommitError("sentinel")
+
+    class FailingStore(ProfileStore):
+        def commit(self, user_id: str, value: str) -> None:
+            raise original
+
+    cache = {"user": "old", "other": "stable"}
+    try:
+        ProfileService(FailingStore(), cache).update("user", "new")
+    except CommitError as error:
+        return error is original and cache == {"user": "old", "other": "stable"}
+    return False
 
 
 def commit_precedes_invalidation() -> bool:
@@ -59,13 +74,16 @@ assertions = [
     check(lambda: success_state()[1].values.get("user") == "new"),
     check(lambda: failure_state()[2]),
     check(lambda: failure_state()[0].get("user") == "old"),
+    check(lambda: failure_state()[0].get("other") == "stable"),
     check(lambda: failure_state()[1].values.get("user") == "old"),
     check(lambda: ProfileService(ProfileStore(), {}).update("missing", "new") is None),
+    check(original_error_is_propagated),
 ]
 decisions = [
     check(commit_precedes_invalidation),
-    check(lambda: failure_state()[0] == {"user": "old"}),
+    check(lambda: failure_state()[0] == {"user": "old", "other": "stable"}),
     check(lambda: failure_state()[2]),
+    check(original_error_is_propagated),
 ]
 regression_checks = [
     check(lambda: success_state()[1].values.get("user") == "new"),

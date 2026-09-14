@@ -19,6 +19,6 @@ class RefreshTokenStore:
         if family.revoked:
             raise ValueError("token family revoked")
         if presented_token != family.active_token:
-            # Intentional baseline bug: replay is rejected but does not revoke the family.
+            # Replay policy is deliberately incomplete for the handoff study.
             raise ValueError("refresh token reuse")
         family.active_token = next_token

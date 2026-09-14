@@ -20,6 +20,6 @@ class ProfileService:
         self.cache = cache
 
     def update(self, user_id: str, value: str) -> None:
-        # Intentional baseline bug: a failed commit must leave the cached value intact.
+        # Commit-boundary behavior is deliberately incomplete for the handoff study.
         self.cache.pop(user_id, None)
         self.store.commit(user_id, value)

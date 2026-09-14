@@ -86,6 +86,14 @@ manifest pins the repository commit and each hidden evaluator's SHA-256. The eva
 the target repository and is omitted from Agent B's run card, so it cannot be read while solving the
 task through normal repository exploration. Creating it is local-only and consumes no agent quota.
 
+The task split is intentionally handoff-dependent. Stage A receives several accepted behavioral
+requirements, implements only the common foundation, and is told not to copy the pending decisions
+into repository comments or documentation. The visible tests cover that foundation; the hidden
+evaluator checks the pending decisions. Therefore a no-context Agent B cannot recover the complete
+specification merely by reading a conveniently explicit TODO, which was the main design flaw in the
+first study. This models a common failure mode—accepted requirements living only in conversation—
+without making the implementation itself artificially large.
+
 Alternatively, copy `experiments/tasks.example.json`, replace its repository and commit placeholders,
 and add or remove tasks to match the desired budget. Three tasks produce twelve runs; five tasks
 produce twenty runs.

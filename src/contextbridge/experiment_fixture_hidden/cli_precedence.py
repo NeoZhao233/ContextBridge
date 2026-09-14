@@ -46,10 +46,12 @@ assertions = [
     check(lambda: resolve('{"value":"file"}', {"value": "env"})["value"] == "env"),
     check(lambda: resolve('{"value":"file"}')["value"] == "file"),
     check(lambda: resolve(None, {"value": "env"}) == {"value": "env"}),
+    check(lambda: resolve('{"value":"file"}', {"value": ""})["value"] == "file"),
+    check(lambda: resolve('{"value":"file"}', {}, {"value": ""})["value"] == ""),
     check(malformed_is_error),
     check(non_object_is_error),
 ]
-decisions = assertions[:3]
+decisions = [*assertions[:3], *assertions[4:6]]
 regression_checks = [check(lambda: resolve(None) == {}), check(malformed_is_error)]
 result = {
     "assertions_passed": sum(assertions),

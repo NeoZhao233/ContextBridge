@@ -18,5 +18,5 @@ def resolve_config(
             file_values = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as error:
             raise ConfigError(f"invalid config file: {error}") from error
-    # Intentional baseline bug: environment and CLI precedence are not implemented.
+    # Layer merging is deliberately incomplete for the handoff study.
     return {str(key): str(value) for key, value in file_values.items()}

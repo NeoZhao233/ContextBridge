@@ -1,23 +1,29 @@
 import unittest
 
-from resume_fixture.profile_cache import CommitError, ProfileService, ProfileStore
+from resume_fixture.profile_cache import ProfileService, ProfileStore
 
 
 class ProfileCacheTests(unittest.TestCase):
-    def test_success_invalidates_cache_after_commit(self) -> None:
-        store = ProfileStore()
-        cache = {"user-1": "old"}
+    def test_success_commits_before_invalidating_target(self) -> None:
+        events: list[str] = []
+
+        class LoggingStore(ProfileStore):
+            def commit(self, user_id: str, value: str) -> None:
+                events.append("commit")
+                super().commit(user_id, value)
+
+        class LoggingCache(dict[str, str]):
+            def pop(self, key: str, default: str | None = None) -> str | None:
+                events.append("invalidate")
+                return super().pop(key, default)
+
+        store = LoggingStore()
+        cache = LoggingCache({"user-1": "old", "user-2": "stable"})
         ProfileService(store, cache).update("user-1", "new")
         self.assertNotIn("user-1", cache)
+        self.assertEqual(cache["user-2"], "stable")
         self.assertEqual(store.values["user-1"], "new")
-
-    def test_failed_commit_keeps_cached_value(self) -> None:
-        store = ProfileStore()
-        store.fail_next_commit = True
-        cache = {"user-1": "old"}
-        with self.assertRaises(CommitError):
-            ProfileService(store, cache).update("user-1", "new")
-        self.assertEqual(cache["user-1"], "old")
+        self.assertEqual(events, ["commit", "invalidate"])
 
 
 if __name__ == "__main__":

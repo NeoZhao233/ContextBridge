@@ -72,6 +72,22 @@ def evidence_is_retained() -> bool:
     return store.replay_evidence("family") == ("one",)
 
 
+def evidence_is_stable_after_revocation() -> bool:
+    store = refresh_tokens.RefreshTokenStore()
+    store.issue("family", "one")
+    store.exchange("family", "one", "two")
+    try:
+        store.exchange("family", "one", "three")
+    except ValueError:
+        pass
+    try:
+        store.exchange("family", "two", "three")
+    except ValueError:
+        pass
+    evidence = store.replay_evidence("family")
+    return evidence == ("one",) and isinstance(evidence, tuple)
+
+
 def typed_errors_are_preserved() -> bool:
     return issubclass(refresh_tokens.RefreshTokenReuseError, ValueError) and issubclass(
         refresh_tokens.TokenFamilyRevokedError, ValueError
@@ -84,11 +100,13 @@ assertions = [
     check(replay_revokes_family),
     check(other_family_survives),
     check(evidence_is_retained),
+    check(evidence_is_stable_after_revocation),
     check(typed_errors_are_preserved),
 ]
 decisions = [
     check(replay_revokes_family),
     check(other_family_survives),
+    check(evidence_is_stable_after_revocation),
     check(typed_errors_are_preserved),
 ]
 regression_checks = [check(rotated_token_works), check(replay_is_rejected)]
