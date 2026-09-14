@@ -220,3 +220,12 @@ The reporter rejects duplicate and unknown run IDs, keeps missing runs visible, 
 strict pass, task completion, decision adherence, regressions, duration, reported tokens, repeated
 exploration, and incorrect assumptions by condition. It does not fill in missing results, combine
 metrics with post-hoc weights, or calculate significance for a small resume-project sample.
+
+### Observed V2 pilot snapshot
+
+The repository includes a partial seven-run snapshot in
+[`experiments/v2/partial-report.md`](../experiments/v2/partial-report.md). It already demonstrates
+why graded outcomes matter: the no-context config run passed its visible tests but missed the hidden
+empty-CLI decision (7/8 behavior assertions, 4/5 decisions), while both completed ContextBridge
+runs passed all hidden checks. The snapshot stopped when the Codex account hit its usage limit during
+run 8; it is explicitly incomplete and does not establish that ContextBridge is universally best.

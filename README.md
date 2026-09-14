@@ -223,6 +223,10 @@ passed; it remains useful for efficiency evidence, not outcome-superiority claim
 twenty runs are the stretch target. See [the evaluation protocol](docs/evaluation.md) for metric
 definitions, current offline results, limitations, and the end-to-end design.
 
+A partial V2 pilot is recorded in [experiments/v2/partial-report.md](experiments/v2/partial-report.md):
+it contains seven completed runs before a Codex usage-limit interruption and already captures a
+hidden decision failure that visible tests missed.
+
 [Live Claude Code → ContextBridge → Codex smoke tests and matched four-condition replays](docs/smoke-test.md)
 have now completed all three fixtures: twelve Agent B runs, all with passing targeted tests. In the
 [descriptive summary](experiments/live/summary.md), ContextBridge averaged 36.8% fewer reported
