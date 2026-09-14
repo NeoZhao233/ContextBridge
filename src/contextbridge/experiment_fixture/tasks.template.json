@@ -6,7 +6,7 @@
       "title": "Resume refresh-token replay protection",
       "repository": "__REPOSITORY__",
       "base_commit": "__BASE_COMMIT__",
-      "stage_a_prompt": "A security review accepted these requirements: replay revokes only the affected token family before raising; other families remain usable; the first replayed token is retained once as immutable tuple evidence; and typed reuse/revoked errors remain ValueError-compatible. Implement the typed errors and evidence foundation, but stop before changing replay/family-revocation behavior. Do not add documentation or comments that restate the still-pending requirements; they must be handed off through conversation context.",
+      "stage_a_prompt": "A security review accepted these requirements: replay revokes only the affected token family before raising; other families remain usable; each family retains its first replayed token once; replay_evidence(family_id) returns that evidence as an immutable tuple; and RefreshTokenReuseError plus TokenFamilyRevokedError remain ValueError-compatible. Implement those named error classes, per-family evidence storage/access, and evidence capture before raising RefreshTokenReuseError, but stop before changing family-revocation behavior. Do not add documentation or comments that restate the still-pending requirements; they must be handed off through conversation context.",
       "stage_b_prompt": "Complete the pending refresh-token replay behavior consistently with Agent A's accepted requirements. Run the targeted tests, but do not treat their coverage as the complete specification.",
       "test_command": "python -m unittest tests/test_refresh_tokens.py -v",
       "evaluation_command": "python __EVALUATOR_DIRECTORY__/auth_refresh.py",
