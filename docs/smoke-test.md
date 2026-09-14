@@ -1,4 +1,4 @@
-# Live cross-agent smoke test
+# Live cross-agent smoke test and preliminary comparison
 
 On 2026-09-13, ContextBridge completed one real Claude Code to Codex handoff using the bundled
 configuration-precedence fixture. This is an integration smoke test, not a controlled comparison or
@@ -44,4 +44,37 @@ agent harness's own prompts and tool loop, so they are not directly comparable t
 Context Pack estimate.
 
 This single successful run does not show that ContextBridge beats no context, raw history, or a
-one-shot summary. The planned twelve-run study is still required before making comparative claims.
+one-shot summary. To check whether the experiment plumbing could expose meaningful differences, the
+same Agent A checkpoint was subsequently replayed once under all four conditions.
+
+## Matched four-condition replay
+
+All four Agent B runs used fresh Codex processes with the same model, reasoning setting, fixture
+commit, Stage A file content, and Stage B prompt. Only the supplied handoff context changed. The raw
+condition received all 18 permitted Claude events; the summary condition received a fixed 205-token
+summary of Agent A's outcome; and the ContextBridge condition received the validated 1,913-token
+pack. Durations come from the first and last timestamps in each persisted Codex trace.
+
+| Condition | Handoff tokens | Agent B reported tokens | Seconds | Tool calls | Target tests | Final diff +/− |
+|---|---:|---:|---:|---:|---:|---:|
+| no context | 0 | 31,702 | 67.9 | 8 | 2/2 | 18/5 |
+| raw history | 2,926 | 31,414 | 66.4 | 6 | 2/2 | 11/3 |
+| one-shot summary | 205 | 18,040 | 54.3 | 8 | 2/2 | 8/2 |
+| ContextBridge | 1,913 | 10,586 | 133.4 | 5 | 2/2 | 8/2 |
+
+In this replay, ContextBridge used 66.3% fewer Agent B tokens than raw history and 66.6% fewer than
+no context. It also produced the same minimal tracked diff as the summary condition. Raw history and
+no context both expanded the implementation beyond the specified remaining change; the no-context
+run additionally searched the repository, attempted a missing interpreter, ran unrelated failing
+tests, and authored its own edge-case probe. The ContextBridge run used the fewest tool calls and
+went directly to the inherited TODO.
+
+“Agent B reported tokens” is the Codex CLI total shown to the user: uncached input plus output. Full
+trace input is higher because it includes cached harness prompts. The same definition is used for
+all four rows.
+
+ContextBridge was nevertheless the slowest run by wall-clock time. With one run per condition,
+latency, model-service variance, and ordering effects dominate, so this result supports neither a
+speed claim nor statistical superiority. The planned twelve-run study remains necessary. It should
+also randomize condition order and repeat tasks before any numbers are promoted to the project
+headline or a résumé.
